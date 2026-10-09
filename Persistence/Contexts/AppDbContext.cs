@@ -324,6 +324,7 @@ namespace Persistence.Contexts
                 rib.Property(x => x.Quantity).HasColumnType("decimal(18,2)");
                 rib.Property(x => x.LineTotal).HasColumnType("decimal(18,2)");
                 rib.Property(x => x.IsAssigned).HasDefaultValue(false);
+                rib.Property(x => x.ParticipantUserIdsJson).HasMaxLength(2000);
             });
 
         }

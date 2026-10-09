@@ -771,10 +771,16 @@ namespace Persistence.Migrations
                     b.Property<int>("HouseId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("ImageHeight")
+                        .HasColumnType("int");
+
                     b.Property<string>("ImageUrl")
                         .IsRequired()
                         .HasMaxLength(1024)
                         .HasColumnType("nvarchar(1024)");
+
+                    b.Property<int?>("ImageWidth")
+                        .HasColumnType("int");
 
                     b.Property<string>("RawOcrText")
                         .HasColumnType("nvarchar(max)");
@@ -843,6 +849,10 @@ namespace Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ParticipantUserIdsJson")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<int?>("PersonalUserId")
                         .HasColumnType("int");

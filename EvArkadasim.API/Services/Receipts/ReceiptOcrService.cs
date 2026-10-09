@@ -100,6 +100,8 @@ namespace EvArkadasim.API.Services.Receipts
                     StoreName = payload.StoreName,
                     ReceiptDate = payload.ReceiptDate,
                     TotalAmount = payload.TotalAmount,
+                    ImageWidth = payload.ImageWidth,
+                    ImageHeight = payload.ImageHeight,
                     Items = payload.Items?.Select(item => new ReceiptParsedItem
                     {
                         Name = item.Name ?? string.Empty,
@@ -557,6 +559,12 @@ namespace EvArkadasim.API.Services.Receipts
 
             [JsonPropertyName("total_amount")]
             public decimal? TotalAmount { get; set; }
+
+            [JsonPropertyName("image_width")]
+            public int? ImageWidth { get; set; }
+
+            [JsonPropertyName("image_height")]
+            public int? ImageHeight { get; set; }
 
             [JsonPropertyName("items")]
             public List<PythonReceiptItem>? Items { get; set; }

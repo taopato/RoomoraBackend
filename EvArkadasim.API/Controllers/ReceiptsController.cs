@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Persistence.Contexts;
 using System.Security.Claims;
+using System.Text.Json;
 
 namespace EvArkadasim.API.Controllers
 {
@@ -221,10 +222,14 @@ namespace EvArkadasim.API.Controllers
                 return BadRequest(new { message = "Fiş toplamı negatif olamaz." });
 
             var activeMemberIds = await GetActiveHouseMemberIdsAsync(receipt.HouseId, cancellationToken);
-            var invalidPersonalItem = request.Items.Any(item =>
-                !item.IsShared && (!item.PersonalUserId.HasValue || !activeMemberIds.Contains(item.PersonalUserId.Value)));
-            if (invalidPersonalItem)
-                return BadRequest(new { message = "Kişisel fiş kalemleri aktif bir ev üyesine atanmalıdır." });
+            var invalidAssignment = request.Items.Any(item =>
+            {
+                var participantIds = ResolveRequestedParticipantIds(item, activeMemberIds);
+                return participantIds.Any(id => !activeMemberIds.Contains(id))
+                    || (item.IsAssigned && participantIds.Count == 0);
+            });
+            if (invalidAssignment)
+                return BadRequest(new { message = "Fiş kalemleri yalnızca aktif ev üyelerine atanabilir." });
 
             var normalizedItems = request.Items
                 .OrderBy(x => x.SortOrder)
@@ -261,6 +266,9 @@ namespace EvArkadasim.API.Controllers
             {
                 var item = normalized.Item;
                 var name = normalized.Name!;
+                var participantIds = ResolveRequestedParticipantIds(item, activeMemberIds);
+                var isAssigned = item.IsAssigned || participantIds.Count > 0;
+                var isSharedWithWholeHouse = isAssigned && participantIds.Count == activeMemberIds.Count;
                 receipt.Items.Add(new ReceiptItem
                 {
                     Name = name[..Math.Min(name.Length, 256)],
@@ -271,9 +279,10 @@ namespace EvArkadasim.API.Controllers
                     BoxTop = item.BoxTop,
                     BoxWidth = item.BoxWidth,
                     BoxHeight = item.BoxHeight,
-                    IsAssigned = item.IsAssigned,
-                    IsShared = item.IsShared,
-                    PersonalUserId = item.IsShared ? null : item.PersonalUserId,
+                    IsAssigned = isAssigned,
+                    IsShared = isSharedWithWholeHouse,
+                    PersonalUserId = participantIds.Count == 1 ? participantIds[0] : null,
+                    ParticipantUserIdsJson = isAssigned ? JsonSerializer.Serialize(participantIds) : null,
                     SortOrder = normalized.SortOrder,
                 });
             }
@@ -302,20 +311,32 @@ namespace EvArkadasim.API.Controllers
             var activeMemberIds = await GetActiveHouseMemberIdsAsync(receipt.HouseId, cancellationToken);
             if (!activeMemberIds.Contains(request.PayerUserId))
                 return BadRequest(new { message = "Ödeyen kişi aktif bir ev üyesi olmalıdır." });
-            if (receipt.Items.Any(x => !x.IsShared && (!x.PersonalUserId.HasValue || !activeMemberIds.Contains(x.PersonalUserId.Value))))
-                return BadRequest(new { message = "Kişisel fiş kalemlerinin tamamı aktif ev üyelerine atanmalıdır." });
+            var itemParticipants = receipt.Items.ToDictionary(
+                item => item.Id,
+                item => ResolveStoredParticipantIds(item, activeMemberIds));
+            if (itemParticipants.Values.Any(ids => ids.Count == 0 || ids.Any(id => !activeMemberIds.Contains(id))))
+                return BadRequest(new { message = "Fiş kalemlerinin tamamı en az bir aktif ev üyesine atanmalıdır." });
             if (request.Category.HasValue && !Enum.IsDefined(request.Category.Value))
                 return BadRequest(new { message = "Geçersiz harcama kategorisi." });
 
-            var sharedTotal = receipt.Items.Where(x => x.IsShared).Sum(x => x.LineTotal);
-            var personalItems = receipt.Items
-                .Where(x => !x.IsShared && x.PersonalUserId.HasValue)
-                .GroupBy(x => x.PersonalUserId!.Value)
-                .Select(g => new PersonalExpenseDto
+            var sharedTotal = 0m;
+            var personalTotals = activeMemberIds.ToDictionary(id => id, _ => 0m);
+            foreach (var item in receipt.Items)
+            {
+                var participantIds = itemParticipants[item.Id];
+                if (participantIds.Count == activeMemberIds.Count)
                 {
-                    UserId = g.Key,
-                    Tutar = g.Sum(x => x.LineTotal)
-                })
+                    sharedTotal += item.LineTotal;
+                    continue;
+                }
+
+                foreach (var share in SplitAmount(item.LineTotal, participantIds))
+                    personalTotals[share.UserId] += share.Amount;
+            }
+
+            var personalItems = personalTotals
+                .Where(entry => entry.Value > 0)
+                .Select(entry => new PersonalExpenseDto { UserId = entry.Key, Tutar = entry.Value })
                 .ToList();
 
             var title = string.IsNullOrWhiteSpace(receipt.StoreName) ? "Fiş Harcaması" : $"{receipt.StoreName} Fişi";
@@ -332,6 +353,7 @@ namespace EvArkadasim.API.Controllers
                 OdeyenUserId = request.PayerUserId,
                 KaydedenUserId = currentUserId.Value,
                 OrtakHarcamaTutari = sharedTotal,
+                Participants = activeMemberIds.OrderBy(id => id).ToList(),
                 Date = receipt.ReceiptDate ?? DateTime.UtcNow,
                 SahsiHarcamalar = personalItems,
                 Category = request.Category ?? ExpenseCategory.Market,
@@ -358,44 +380,102 @@ namespace EvArkadasim.API.Controllers
 
         private async Task<object?> BuildReceiptDetailAsync(int receiptId, CancellationToken cancellationToken)
         {
-            return await _dbContext.Receipts
+            var receipt = await _dbContext.Receipts
                 .AsNoTracking()
+                .Include(x => x.Items)
                 .Where(x => x.Id == receiptId)
-                .Select(x => new
-                {
-                    x.Id,
-                    x.HouseId,
-                    x.UploadedByUserId,
-                    x.ImageUrl,
-                    x.RawOcrText,
-                    x.StoreName,
-                    x.ReceiptDate,
-                    x.DetectedTotalAmount,
-                    x.Status,
-                    x.CreatedAt,
-                    x.UpdatedAt,
-                    x.ConvertedExpenseId,
-                    Items = x.Items
-                        .OrderBy(i => i.SortOrder)
-                        .Select(i => new
-                        {
-                            i.Id,
-                            i.Name,
-                            i.Price,
-                            i.Quantity,
-                            i.LineTotal,
-                            i.BoxLeft,
-                            i.BoxTop,
-                            i.BoxWidth,
-                            i.BoxHeight,
-                            i.IsAssigned,
-                            i.IsShared,
-                            i.PersonalUserId,
-                            i.SortOrder
-                        })
-                        .ToList()
-                })
                 .FirstOrDefaultAsync(cancellationToken);
+            if (receipt == null) return null;
+
+            return new
+            {
+                receipt.Id,
+                receipt.HouseId,
+                receipt.UploadedByUserId,
+                receipt.ImageUrl,
+                receipt.ImageWidth,
+                receipt.ImageHeight,
+                receipt.RawOcrText,
+                receipt.StoreName,
+                receipt.ReceiptDate,
+                receipt.DetectedTotalAmount,
+                receipt.Status,
+                receipt.CreatedAt,
+                receipt.UpdatedAt,
+                receipt.ConvertedExpenseId,
+                Items = receipt.Items
+                    .OrderBy(item => item.SortOrder)
+                    .Select(item => new
+                    {
+                        item.Id,
+                        item.Name,
+                        item.Price,
+                        item.Quantity,
+                        item.LineTotal,
+                        item.BoxLeft,
+                        item.BoxTop,
+                        item.BoxWidth,
+                        item.BoxHeight,
+                        item.IsAssigned,
+                        item.IsShared,
+                        item.PersonalUserId,
+                        ParticipantUserIds = ParseParticipantUserIds(item.ParticipantUserIdsJson),
+                        item.SortOrder
+                    })
+                    .ToList()
+            };
+        }
+
+        private static List<int> ResolveRequestedParticipantIds(
+            UpdateReceiptItemRequest item,
+            HashSet<int> activeMemberIds)
+        {
+            var explicitIds = (item.ParticipantUserIds ?? new List<int>())
+                .Where(id => id > 0)
+                .Distinct()
+                .OrderBy(id => id)
+                .ToList();
+            if (explicitIds.Count > 0) return explicitIds;
+            if (item.IsShared) return activeMemberIds.OrderBy(id => id).ToList();
+            return item.PersonalUserId.HasValue ? new List<int> { item.PersonalUserId.Value } : new List<int>();
+        }
+
+        private static List<int> ResolveStoredParticipantIds(ReceiptItem item, HashSet<int> activeMemberIds)
+        {
+            var explicitIds = ParseParticipantUserIds(item.ParticipantUserIdsJson);
+            if (explicitIds.Count > 0) return explicitIds;
+            if (item.IsShared) return activeMemberIds.OrderBy(id => id).ToList();
+            return item.PersonalUserId.HasValue ? new List<int> { item.PersonalUserId.Value } : new List<int>();
+        }
+
+        private static List<int> ParseParticipantUserIds(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return new List<int>();
+            try
+            {
+                return (JsonSerializer.Deserialize<List<int>>(json) ?? new List<int>())
+                    .Where(id => id > 0)
+                    .Distinct()
+                    .OrderBy(id => id)
+                    .ToList();
+            }
+            catch (JsonException)
+            {
+                return new List<int>();
+            }
+        }
+
+        private static List<(int UserId, decimal Amount)> SplitAmount(decimal total, List<int> participantIds)
+        {
+            var ordered = participantIds.Distinct().OrderBy(id => id).ToList();
+            if (total <= 0 || ordered.Count == 0) return new List<(int, decimal)>();
+
+            var baseAmount = Math.Floor(total * 100 / ordered.Count) / 100;
+            var remainderInCents = (int)Math.Round((total - baseAmount * ordered.Count) * 100);
+            return ordered.Select((userId, index) => (
+                userId,
+                baseAmount + (index < remainderInCents ? 0.01m : 0m)
+            )).ToList();
         }
 
         private int? GetCurrentUserId()
@@ -440,6 +520,8 @@ namespace EvArkadasim.API.Controllers
                 : storeName[..Math.Min(storeName.Length, 256)];
             receipt.ReceiptDate = ocrResult.ReceiptDate ?? fallbackReceiptDate ?? receipt.ReceiptDate ?? DateTime.UtcNow.AddHours(3).Date;
             receipt.DetectedTotalAmount = ocrResult.TotalAmount ?? (ocrResult.Items.Count > 0 ? ocrResult.Items.Sum(x => x.LineTotal) : receipt.DetectedTotalAmount);
+            receipt.ImageWidth = ocrResult.ImageWidth ?? receipt.ImageWidth;
+            receipt.ImageHeight = ocrResult.ImageHeight ?? receipt.ImageHeight;
             receipt.Status = ocrResult.Items.Count > 0 ? ReceiptStatus.Parsed : ReceiptStatus.Uploaded;
             receipt.UpdatedAt = DateTime.UtcNow;
 
@@ -463,6 +545,7 @@ namespace EvArkadasim.API.Controllers
                 BoxHeight = value.BoxHeight,
                 IsAssigned = false,
                 IsShared = true,
+                ParticipantUserIdsJson = null,
                 SortOrder = index
             }))
             {
@@ -532,6 +615,7 @@ namespace EvArkadasim.API.Controllers
         public bool IsAssigned { get; set; }
         public bool IsShared { get; set; } = true;
         public int? PersonalUserId { get; set; }
+        public List<int>? ParticipantUserIds { get; set; }
         public int SortOrder { get; set; }
     }
 

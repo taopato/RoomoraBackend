@@ -403,6 +403,8 @@ BEGIN
         [StoreName] NVARCHAR(256) NULL,
         [ReceiptDate] DATETIME2 NULL,
         [DetectedTotalAmount] DECIMAL(18,2) NULL,
+        [ImageWidth] INT NULL,
+        [ImageHeight] INT NULL,
         [Status] INT NOT NULL DEFAULT(0),
         [ConvertedExpenseId] INT NULL,
         [CreatedAt] DATETIME2 NOT NULL,
@@ -438,6 +440,7 @@ BEGIN
         [IsAssigned] BIT NOT NULL DEFAULT(0),
         [IsShared] BIT NOT NULL DEFAULT(1),
         [PersonalUserId] INT NULL,
+        [ParticipantUserIdsJson] NVARCHAR(2000) NULL,
         [SortOrder] INT NOT NULL DEFAULT(0),
         CONSTRAINT [FK_ReceiptItems_Receipts_ReceiptId] FOREIGN KEY ([ReceiptId]) REFERENCES [Receipts]([Id]) ON DELETE CASCADE
     );
@@ -455,6 +458,12 @@ IF COL_LENGTH('ReceiptItems', 'BoxHeight') IS NULL
     ALTER TABLE [ReceiptItems] ADD [BoxHeight] INT NULL;
 IF COL_LENGTH('ReceiptItems', 'IsAssigned') IS NULL
     ALTER TABLE [ReceiptItems] ADD [IsAssigned] BIT NOT NULL CONSTRAINT [DF_ReceiptItems_IsAssigned] DEFAULT(0);
+IF COL_LENGTH('Receipts', 'ImageWidth') IS NULL
+    ALTER TABLE [Receipts] ADD [ImageWidth] INT NULL;
+IF COL_LENGTH('Receipts', 'ImageHeight') IS NULL
+    ALTER TABLE [Receipts] ADD [ImageHeight] INT NULL;
+IF COL_LENGTH('ReceiptItems', 'ParticipantUserIdsJson') IS NULL
+    ALTER TABLE [ReceiptItems] ADD [ParticipantUserIdsJson] NVARCHAR(2000) NULL;
 """;
 
     db.Database.ExecuteSqlRaw(sql);

@@ -23,6 +23,8 @@ namespace Domain.Entities
 
         public DateTime? ReceiptDate { get; set; }
         public decimal? DetectedTotalAmount { get; set; }
+        public int? ImageWidth { get; set; }
+        public int? ImageHeight { get; set; }
 
         public ReceiptStatus Status { get; set; } = ReceiptStatus.Uploaded;
 
