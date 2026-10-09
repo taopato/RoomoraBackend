@@ -218,10 +218,44 @@ namespace EvArkadasim.API.Services.Receipts
         private static List<ReceiptParsedItem> ExtractItems(List<ReceiptOverlayLine> lines)
         {
             var items = new List<ReceiptParsedItem>();
+            var discounts = new List<(string Name, decimal Amount)>();
+            var inDiscountSection = false;
             for (var index = 0; index < lines.Count; index += 1)
             {
                 var line = lines[index];
                 var lower = line.Text.ToLowerInvariant();
+                if (lower.Contains("ürün indirimleri") || lower.Contains("urun indirimleri"))
+                {
+                    inDiscountSection = true;
+                    continue;
+                }
+
+                if (inDiscountSection &&
+                    (lower.Contains("mal/hizmet") || lower.Contains("mal hizmet") ||
+                     lower.Contains("ödenecek") || lower.Contains("odenecek") || lower.Contains("topkdv")))
+                {
+                    inDiscountSection = false;
+                }
+
+                var signedDiscount = Regex.Match(
+                    line.Text,
+                    @"[-−]\s*(?<amount>\d{1,3}(?:[ .]\d{3})*(?:[.,]\d{2}))");
+                var discountMatch = signedDiscount.Success
+                    ? signedDiscount
+                    : inDiscountSection
+                        ? Regex.Matches(line.Text, @"(?<amount>\d{1,3}(?:[ .]\d{3})*(?:[.,]\d{2}))").Cast<Match>().LastOrDefault()
+                        : null;
+                if (discountMatch?.Success == true &&
+                    TryParseAmount(discountMatch.Groups["amount"].Value, out var discountAmount) &&
+                    discountAmount > 0)
+                {
+                    var discountName = NormalizeProductName(line.Text[..discountMatch.Index]);
+                    if (IsLikelyProductName(discountName))
+                        discounts.Add((discountName, discountAmount));
+                    continue;
+                }
+
+                if (inDiscountSection) continue;
                 if (IgnoreKeywords.Any(k => lower.Contains(k))) continue;
                 if (IsCodeOrMetaLine(line.Text)) continue;
 
@@ -268,6 +302,25 @@ namespace EvArkadasim.API.Services.Receipts
                     BoxHeight = nextLine.AmountHeight ?? nextLine.Height
                 });
                 index += 1;
+            }
+
+            foreach (var discount in discounts)
+            {
+                var key = ProductMatchKey(discount.Name);
+                if (string.IsNullOrWhiteSpace(key)) continue;
+                var item = items
+                    .Where(candidate =>
+                    {
+                        var candidateKey = ProductMatchKey(candidate.Name);
+                        return !string.IsNullOrWhiteSpace(candidateKey) &&
+                               (candidateKey == key || candidateKey.Contains(key) || key.Contains(candidateKey));
+                    })
+                    .OrderByDescending(candidate => candidate.LineTotal)
+                    .FirstOrDefault();
+                if (item == null) continue;
+
+                item.LineTotal = Math.Max(0, item.LineTotal - discount.Amount);
+                if (item.Quantity == 1) item.Price = item.LineTotal;
             }
 
             return items.Take(40).ToList();
@@ -379,19 +432,18 @@ namespace EvArkadasim.API.Services.Receipts
 
         private static decimal? TryExtractTotal(IEnumerable<string> lines)
         {
-            foreach (var line in lines.Reverse())
+            var materialized = lines.ToList();
+            var priorities = new[] { "ödenecek", "odenecek", "genel toplam", "toplam", "tutar" };
+            foreach (var priority in priorities)
             {
-                var lower = line.ToLowerInvariant();
-                if (!lower.Contains("genel toplam") && !lower.Contains("toplam")) continue;
-
-                var totalIndex = lower.LastIndexOf("toplam", StringComparison.Ordinal);
-                var amountSection = totalIndex >= 0
-                    ? line[(totalIndex + "toplam".Length)..]
-                    : line;
-                var match = Regex.Match(amountSection, @"(?<amount>\d{1,3}(?:[ .]\d{3})*(?:[.,]\d{2})?|\d+(?:[.,]\d{2})?)");
-                if (match.Success && TryParseAmount(match.Groups["amount"].Value, out var amount) && amount > 0)
+                foreach (var line in materialized.AsEnumerable().Reverse())
                 {
-                    return amount;
+                    var lower = line.ToLowerInvariant();
+                    if (!lower.Contains(priority) || lower.Contains("toplam kdv")) continue;
+                    var matches = Regex.Matches(line, @"(?<amount>\d{1,3}(?:[ .]\d{3})*(?:[.,]\d{2})?|\d+(?:[.,]\d{2})?)");
+                    var match = matches.Cast<Match>().LastOrDefault();
+                    if (match?.Success == true && TryParseAmount(match.Groups["amount"].Value, out var amount) && amount > 0)
+                        return amount;
                 }
             }
 
@@ -460,7 +512,18 @@ namespace EvArkadasim.API.Services.Receipts
 
         private static string NormalizeProductName(string text)
         {
-            return NormalizeLine(text).Trim(' ', '-', '*', '.', ':');
+            var normalized = NormalizeLine(text);
+            normalized = Regex.Replace(normalized, @"%\s*\d+[.,]?\d*", string.Empty);
+            normalized = Regex.Replace(normalized, @"\b\d+(?:[.,]\d+)?\s*(?:L|LT|ML|GR|G|KG|CL)\b", string.Empty, RegexOptions.IgnoreCase);
+            return NormalizeLine(normalized).Trim(' ', '-', '*', '.', ':');
+        }
+
+        private static string ProductMatchKey(string text)
+        {
+            var value = NormalizeProductName(text).ToUpperInvariant()
+                .Replace("Ç", "C").Replace("Ğ", "G").Replace("İ", "I")
+                .Replace("Ö", "O").Replace("Ş", "S").Replace("Ü", "U");
+            return Regex.Replace(value, @"[^A-Z0-9]", string.Empty);
         }
 
         private static string NormalizeLine(string line)

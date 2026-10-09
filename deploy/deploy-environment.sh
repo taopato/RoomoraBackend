@@ -51,7 +51,7 @@ else
 fi
 
 service="api-${ENVIRONMENT}-${target}"
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull "$service"
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull "$service" ocr
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d db ocr gateway
 
 echo "${ENVIRONMENT} veritabani migration adimi calisiyor..."
