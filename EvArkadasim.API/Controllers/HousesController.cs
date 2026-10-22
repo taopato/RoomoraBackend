@@ -18,6 +18,7 @@ using System;
 using System.Collections.Generic;
 using System.Security.Claims;
 using System.Threading.Tasks;
+using EvArkadasim.API.Services.Notifications;
 
 namespace WebAPI.Controllers
 {
@@ -36,19 +37,22 @@ namespace WebAPI.Controllers
         private readonly IInvitationRepository _invitationRepository;
         private readonly IUserRepository _userRepository;
         private readonly IWebHostEnvironment _environment;
+        private readonly IPushNotificationService _pushNotifications;
 
         public HousesController(
             IMediator mediator,
             IHouseRepository houseRepository,
             IInvitationRepository invitationRepository,
             IUserRepository userRepository,
-            IWebHostEnvironment environment)
+            IWebHostEnvironment environment,
+            IPushNotificationService pushNotifications)
         {
             _mediator = mediator;
             _houseRepository = houseRepository;
             _invitationRepository = invitationRepository;
             _userRepository = userRepository;
             _environment = environment;
+            _pushNotifications = pushNotifications;
         }
 
         [HttpGet("{houseId:int}")]
@@ -68,6 +72,10 @@ namespace WebAPI.Controllers
                     house.Id,
                     house.Name,
                     house.CoverImageUrl,
+                    house.GroupType,
+                    house.TripStartDate,
+                    house.TripEndDate,
+                    house.CurrencyCode,
                     house.CreatorUserId
                 });
             }
@@ -164,6 +172,19 @@ namespace WebAPI.Controllers
 
             var command = new SendInvitationCommand { HouseId = houseId, Email = request.Email };
             var result = await _mediator.Send(command);
+            var invitedUser = await _userRepository.GetByEmailAsync(request.Email.Trim());
+            if (invitedUser is not null)
+            {
+                await _pushNotifications.SendAsync(
+                    invitedUser.Id,
+                    "group",
+                    "Roomora daveti",
+                    "Yeni bir gruba davet edildin.",
+                    "Roomora invitation",
+                    "You were invited to a new group.",
+                    data: new { route = "Bildirimler", houseId },
+                    ct: HttpContext.RequestAborted);
+            }
             return Ok(result);
         }
 

@@ -18,7 +18,14 @@ namespace Application.Features.Houses.Commands.CreateHouse
         public async Task<CreatedHouseDto> Handle(CreateHouseCommand request, CancellationToken cancellationToken)
         {
             // 1) Yeni house oluştur
-            var entity = new House { Name = request.Name, CreatorUserId = request.CreatorUserId };
+            var entity = new House
+            {
+                Name = request.Name,
+                CreatorUserId = request.CreatorUserId,
+                GroupType = request.GroupType,
+                TripStartDate = request.GroupType == Domain.Enums.GroupType.Trip ? request.TripStartDate : null,
+                TripEndDate = request.GroupType == Domain.Enums.GroupType.Trip ? request.TripEndDate : null,
+            };
 
             // 2) Kaydet
             var added = await _houseRepository.AddAsync(entity);
@@ -32,7 +39,14 @@ namespace Application.Features.Houses.Commands.CreateHouse
             await _houseRepository.AddMemberAsync(member);
 
             // 4) DTO dön
-            return new CreatedHouseDto { Id = added.Id, Name = added.Name };
+            return new CreatedHouseDto
+            {
+                Id = added.Id,
+                Name = added.Name,
+                GroupType = added.GroupType,
+                TripStartDate = added.TripStartDate,
+                TripEndDate = added.TripEndDate,
+            };
         }
     }
 }

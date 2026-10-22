@@ -31,6 +31,9 @@ namespace Application.Features.Houses.Queries.GetUserHouses
                     Id = hm.House.Id,
                     Name = hm.House.Name,
                     CoverImageUrl = hm.House.CoverImageUrl,
+                    GroupType = hm.House.GroupType,
+                    TripStartDate = hm.House.TripStartDate,
+                    TripEndDate = hm.House.TripEndDate,
                     CreatorUserId = hm.House.CreatorUserId,
                     CreatorFullName = hm.House.CreatorUser != null
                         ? $"{hm.House.CreatorUser.FirstName} {hm.House.CreatorUser.LastName}"

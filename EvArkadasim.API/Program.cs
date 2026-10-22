@@ -22,6 +22,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Application.Services.Accounts;
 using Persistence.Services;
 using System.Security.Claims;
+using EvArkadasim.API.Services.Notifications;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -58,6 +59,10 @@ builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient<IReceiptOcrService, ReceiptOcrService>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(45);
+});
+builder.Services.AddHttpClient<IPushNotificationService, ExpoPushNotificationService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
 });
 
 // 2) MediatR — Application assembly’sini tara (V11 uyumlu kayıt)

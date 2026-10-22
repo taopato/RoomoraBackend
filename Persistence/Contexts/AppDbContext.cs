@@ -35,6 +35,8 @@ namespace Persistence.Contexts
         public DbSet<Receipt> Receipts { get; set; } = null!;
         public DbSet<ReceiptItem> ReceiptItems { get; set; } = null!;
         public DbSet<RefreshToken> RefreshTokens { get; set; } = null!;
+        public DbSet<QuickExpenseTemplate> QuickExpenseTemplates { get; set; } = null!;
+        public DbSet<PushDevice> PushDevices { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -146,11 +148,38 @@ namespace Persistence.Contexts
                 item.HasIndex(x => new { x.SectionId, x.IsCompleted, x.DeletedAt });
             });
 
-            modelBuilder.Entity<House>()
-                .HasOne(h => h.CreatorUser)
-                .WithMany()
-                .HasForeignKey(h => h.CreatorUserId)
-                .OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity<House>(house =>
+            {
+                house.Property(x => x.GroupType).HasConversion<int>().HasDefaultValue(GroupType.Home);
+                house.Property(x => x.CurrencyCode).HasMaxLength(3).HasDefaultValue("TRY");
+                house.HasOne(h => h.CreatorUser)
+                    .WithMany()
+                    .HasForeignKey(h => h.CreatorUserId)
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<QuickExpenseTemplate>(template =>
+            {
+                template.Property(x => x.Name).HasMaxLength(80).IsRequired();
+                template.Property(x => x.Description).HasMaxLength(240);
+                template.Property(x => x.Amount).HasPrecision(18, 2);
+                template.Property(x => x.ParticipantUserIdsJson).HasMaxLength(2000);
+                template.Property(x => x.PersonalAmountsJson).HasMaxLength(4000);
+                template.HasIndex(x => new { x.OwnerUserId, x.HouseId, x.IsArchived });
+                template.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
+                template.HasOne<House>().WithMany().HasForeignKey(x => x.HouseId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<PushDevice>(device =>
+            {
+                device.Property(x => x.ExpoPushToken).HasMaxLength(256).IsRequired();
+                device.Property(x => x.Platform).HasMaxLength(16).IsRequired();
+                device.Property(x => x.LanguageCode).HasMaxLength(5).HasDefaultValue("tr").IsRequired();
+                device.Property(x => x.DeviceName).HasMaxLength(120);
+                device.HasIndex(x => x.ExpoPushToken).IsUnique();
+                device.HasIndex(x => new { x.UserId, x.IsActive });
+                device.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            });
 
             modelBuilder.Entity<Expense>()
                 .HasOne(e => e.OdeyenUser)
