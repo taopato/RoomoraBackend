@@ -97,7 +97,7 @@ public class QuickExpenseTemplatesController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 80)
             return BadRequest(new { message = "Hizli harcama adi zorunludur." });
         if (request.Amount <= 0) return BadRequest(new { message = "Tutar sifirdan buyuk olmalidir." });
-        if (!Enum.IsDefined(typeof(ExpenseCategory), request.CategoryId))
+        if (!Enum.IsDefined((ExpenseCategory)request.CategoryId))
             return BadRequest(new { message = "Gecersiz harcama kategorisi." });
 
         var activeIds = await _db.HouseMembers.AsNoTracking()
