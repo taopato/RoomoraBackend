@@ -37,7 +37,7 @@ public static class RoomoraEmailTemplate
         var safeLink = WebUtility.HtmlEncode(inviteLink);
         return Build(
             "Eve davet edildin",
-            "Ortak yaşamın kolay hali",
+            "Paylaşılan giderlerin kolay yolu",
             $"""
             <p style="margin:0 0 10px;color:#203b53;font-size:17px;line-height:1.5;font-weight:700">Ev arkadaşların Roomora'da seni bekliyor.</p>
             <p class="lead" style="margin:0 0 28px;color:#53677a;font-size:16px;line-height:1.7">Daveti kabul ederek ortak giderleri, faturaları ve ev notlarını tek bir yerde birlikte yönetebilirsin.</p>
@@ -74,22 +74,9 @@ public static class RoomoraEmailTemplate
           <meta name="color-scheme" content="light">
           <meta name="supported-color-schemes" content="light">
           <title>{{safeTitle}}</title>
-          <style>
-            @media only screen and (max-width:620px) {
-              .email-shell { padding:16px 8px !important; }
-              .email-card { border-radius:8px !important; }
-              .brand-header { padding:24px 22px 20px !important; }
-              .brand-logo { width:76px !important; height:76px !important; }
-              .brand-name { font-size:27px !important; }
-              .email-body { padding:30px 24px 32px !important; }
-              .email-title { font-size:27px !important; }
-              .lead { font-size:15px !important; }
-              .email-footer { padding:20px 24px !important; }
-            }
-          </style>
         </head>
         <body style="margin:0;padding:0;background:#eef4f8;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;-webkit-text-size-adjust:100%">
-          <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">{{safeTitle}} · Roomora</div>
+          <div style="display:none!important;max-height:0;max-width:0;overflow:hidden;opacity:0;color:transparent;mso-hide:all">{{safeTitle}} · Roomora</div>
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;background:#eef4f8">
             <tr>
               <td class="email-shell" align="center" style="padding:38px 14px">
@@ -103,7 +90,7 @@ public static class RoomoraEmailTemplate
                           </td>
                           <td valign="middle" style="padding-left:17px;text-align:left">
                             <div class="brand-name" style="color:#142f47;font-size:30px;line-height:1.1;font-weight:800">Roomora</div>
-                            <div style="margin-top:7px;color:#56738c;font-size:13px;line-height:1.4">Ortak yaşamın kolay hali</div>
+                            <div style="margin-top:7px;color:#56738c;font-size:13px;line-height:1.4">Paylaşılan giderlerin kolay yolu</div>
                           </td>
                         </tr>
                       </table>

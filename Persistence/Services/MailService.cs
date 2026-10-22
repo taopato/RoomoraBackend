@@ -68,7 +68,7 @@ namespace Persistence.Services
                 AppContext.BaseDirectory,
                 "wwwroot",
                 "brand",
-                "roomora-logo.png");
+                "roomora-email-logo.png");
 
             if (File.Exists(logoPath))
             {
