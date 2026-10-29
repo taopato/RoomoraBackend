@@ -278,7 +278,7 @@ namespace EvArkadasim.API.Controllers
             receipt.ReceiptDate = NormalizeReceiptDate(request.ReceiptDate);
             receipt.DetectedTotalAmount = request.DetectedTotalAmount > 0
                 ? request.DetectedTotalAmount
-                : normalizedItems.Sum(x => x.LineTotal);
+                : null;
             receipt.Status = ReceiptStatus.Reviewed;
             receipt.UpdatedAt = DateTime.UtcNow;
 
@@ -330,6 +330,11 @@ namespace EvArkadasim.API.Controllers
             if (receipt.Status == ReceiptStatus.Converted || receipt.ConvertedExpenseId.HasValue)
                 return Conflict(new { message = "Bu fiş daha önce harcamaya dönüştürüldü." });
             if (receipt.Items.Count == 0) return BadRequest(new { message = "Fişte dönüştürülecek kalem bulunamadı." });
+            var itemTotal = receipt.Items.Sum(x => x.LineTotal);
+            if (receipt.DetectedTotalAmount is not > 0
+                || Math.Abs(receipt.DetectedTotalAmount.Value - itemTotal) > 0.02m
+                || receipt.Items.Any(x => IsAggregateReceiptItem(x.Name)))
+                return BadRequest(new { message = "Fiş toplamı ve kalemler doğrulanmadan harcamaya dönüştürülemez." });
 
             var activeMemberIds = await GetActiveHouseMemberIdsAsync(receipt.HouseId, cancellationToken);
             if (!activeMemberIds.Contains(request.PayerUserId))
@@ -445,6 +450,10 @@ namespace EvArkadasim.API.Controllers
                 .ToList();
             if (normalizedItems.Count == 0)
                 return BadRequest(new { message = "En az bir geçerli fiş kalemi bulunmalıdır." });
+            if (request.DetectedTotalAmount is not > 0
+                || Math.Abs(request.DetectedTotalAmount.Value - normalizedItems.Sum(x => x.LineTotal)) > 0.02m
+                || normalizedItems.Any(x => IsAggregateReceiptItem(x.Name)))
+                return BadRequest(new { message = "Fiş toplamı ve kalemler doğrulanmalıdır." });
             if (normalizedItems.Any(x => x.Participants.Count == 0
                 || x.Participants.Any(id => !activeMemberIds.Contains(id))))
                 return BadRequest(new { message = "Her fiş kalemi en az bir aktif ev üyesine atanmalıdır." });
@@ -633,6 +642,14 @@ namespace EvArkadasim.API.Controllers
             }
         }
 
+        private static bool IsAggregateReceiptItem(string? name)
+        {
+            var value = name?.Trim() ?? string.Empty;
+            return value.StartsWith("Fis Toplami", StringComparison.OrdinalIgnoreCase)
+                || value.StartsWith("Fiş Toplamı", StringComparison.OrdinalIgnoreCase)
+                || value.StartsWith("Ortak Kalan Tutar", StringComparison.OrdinalIgnoreCase);
+        }
+
         private static List<(int UserId, decimal Amount)> SplitAmount(decimal total, List<int> participantIds)
         {
             var ordered = participantIds.Distinct().OrderBy(id => id).ToList();
@@ -695,7 +712,7 @@ namespace EvArkadasim.API.Controllers
                 : storeName[..Math.Min(storeName.Length, 256)];
             receipt.ReceiptDate = NormalizeReceiptDate(
                 ocrResult.ReceiptDate ?? fallbackReceiptDate ?? receipt.ReceiptDate ?? DateTime.UtcNow.AddHours(3).Date);
-            receipt.DetectedTotalAmount = ocrResult.TotalAmount ?? (ocrResult.Items.Count > 0 ? ocrResult.Items.Sum(x => x.LineTotal) : receipt.DetectedTotalAmount);
+            receipt.DetectedTotalAmount = ocrResult.TotalAmount ?? receipt.DetectedTotalAmount;
             receipt.ImageWidth = ocrResult.ImageWidth ?? receipt.ImageWidth;
             receipt.ImageHeight = ocrResult.ImageHeight ?? receipt.ImageHeight;
             receipt.Status = ocrResult.Items.Count > 0 ? ReceiptStatus.Parsed : ReceiptStatus.Uploaded;
