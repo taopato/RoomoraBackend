@@ -61,3 +61,7 @@
 #*.PDF   diff=astextplain
 #*.rtf   diff=astextplain
 #*.RTF   diff=astextplain
+
+# Keep EF Core migration history in Git, but collapse generated snapshots in GitHub diffs.
+Persistence/Migrations/*.Designer.cs linguist-generated
+Persistence/Migrations/*ModelSnapshot.cs linguist-generated
