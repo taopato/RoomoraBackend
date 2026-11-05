@@ -5,6 +5,7 @@ using Application.Features.Expenses;
 using Domain.Entities;
 using Domain.Enums;
 using EvArkadasim.API.Services.Receipts;
+using EvArkadasim.API.Services.Notifications;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -24,17 +25,20 @@ namespace EvArkadasim.API.Controllers
         private readonly IWebHostEnvironment _environment;
         private readonly IReceiptOcrService _ocrService;
         private readonly IMediator _mediator;
+        private readonly HouseActivityNotificationService _activityNotifications;
 
         public ReceiptsController(
             AppDbContext dbContext,
             IWebHostEnvironment environment,
             IReceiptOcrService ocrService,
-            IMediator mediator)
+            IMediator mediator,
+            HouseActivityNotificationService activityNotifications)
         {
             _dbContext = dbContext;
             _environment = environment;
             _ocrService = ocrService;
             _mediator = mediator;
+            _activityNotifications = activityNotifications;
         }
 
         [HttpPost("Scan")]
@@ -416,6 +420,7 @@ namespace EvArkadasim.API.Controllers
             receipt.UpdatedAt = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+            await _activityNotifications.NotifyExpenseCreatedAsync(receipt.HouseId, currentUserId.Value, createdExpense.Id, createdExpense.Tur, createdExpense.Tutar);
 
             return Ok(new
             {

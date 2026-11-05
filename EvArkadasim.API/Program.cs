@@ -64,6 +64,7 @@ builder.Services.AddHttpClient<IPushNotificationService, ExpoPushNotificationSer
 {
     client.Timeout = TimeSpan.FromSeconds(10);
 });
+builder.Services.AddScoped<HouseActivityNotificationService>();
 
 // 2) MediatR — Application assembly’sini tara (V11 uyumlu kayıt)
 builder.Services.AddMediatR(typeof(Application.Features.Auths.Commands.SendVerificationCode.SendVerificationCodeCommand).Assembly);

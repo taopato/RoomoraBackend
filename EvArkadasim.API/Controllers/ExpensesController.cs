@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Persistence.Contexts;
+using EvArkadasim.API.Services.Notifications;
 using System.Security.Claims;
 using System.Threading.Tasks;
 
@@ -22,11 +23,13 @@ namespace WebAPI.Controllers
     {
         private readonly IMediator _mediator;
         private readonly AppDbContext _dbContext;
+        private readonly HouseActivityNotificationService _activityNotifications;
 
-        public ExpensesController(IMediator mediator, AppDbContext dbContext)
+        public ExpensesController(IMediator mediator, AppDbContext dbContext, HouseActivityNotificationService activityNotifications)
         {
             _mediator = mediator;
             _dbContext = dbContext;
+            _activityNotifications = activityNotifications;
         }
 
         [HttpPost]
@@ -37,6 +40,7 @@ namespace WebAPI.Controllers
             if (!await CanAccessHouseAsync(command.HouseId, currentUserId.Value)) return Forbid();
             command.KaydedenUserId = currentUserId.Value;
             CreatedExpenseResponseDto result = await _mediator.Send(command);
+            await _activityNotifications.NotifyExpenseCreatedAsync(command.HouseId, currentUserId.Value, result.Id, result.Tur, result.Tutar);
             return Ok(result);
         }
 
@@ -48,6 +52,7 @@ namespace WebAPI.Controllers
             if (!await CanAccessHouseAsync(command.HouseId, currentUserId.Value)) return Forbid();
             command.KaydedenUserId = currentUserId.Value;
             CreatedExpenseResponseDto result = await _mediator.Send(command);
+            await _activityNotifications.NotifyExpenseCreatedAsync(command.HouseId, currentUserId.Value, result.Id, result.Tur, result.Tutar);
             return Ok(result);
         }
 
@@ -103,6 +108,7 @@ namespace WebAPI.Controllers
             if (!await CanAccessHouseAsync(model.HouseId, currentUserId.Value)) return Forbid();
             model.KaydedenUserId = currentUserId.Value;
             var result = await _mediator.Send(new CreateIrregularExpenseCommand { Model = model });
+            await _activityNotifications.NotifyExpenseCreatedAsync(model.HouseId, currentUserId.Value, result.ExpenseId, model.Tur, result.Tutar);
             return Ok(result);
         }
 

@@ -18,6 +18,8 @@ using Application.Features.Payments.Commands.RejectPayment;
 using Application.Features.Payments.Commands.DeletePayment;
 using Domain.Enums;
 using EvArkadasim.API.Services.Notifications;
+using Microsoft.EntityFrameworkCore;
+using Persistence.Contexts;
 
 namespace EvArkadasim.API.Controllers
 {
@@ -44,19 +46,22 @@ namespace EvArkadasim.API.Controllers
         private readonly IHouseRepository _houseRepository;
         private readonly IPaymentRepository _paymentRepository;
         private readonly IPushNotificationService _pushNotifications;
+        private readonly AppDbContext _db;
 
         public PaymentsController(
             IMediator mediator,
             IWebHostEnvironment env,
             IHouseRepository houseRepository,
             IPaymentRepository paymentRepository,
-            IPushNotificationService pushNotifications)
+            IPushNotificationService pushNotifications,
+            AppDbContext db)
         {
             _mediator = mediator;
             _env = env;
             _houseRepository = houseRepository;
             _paymentRepository = paymentRepository;
             _pushNotifications = pushNotifications;
+            _db = db;
         }
 
         [HttpPost("CreatePayment")]
@@ -115,13 +120,14 @@ namespace EvArkadasim.API.Controllers
             };
 
             var result = await _mediator.Send(cmd);
+            var senderName = await GetDisplayNameAsync(currentUserId.Value);
             await _pushNotifications.SendAsync(
                 form.AlacakliUserId,
                 "payment",
                 "Yeni ödeme bildirimi",
-                $"{form.Tutar:N2} TL tutarındaki ödeme onayını bekliyor.",
+                $"{senderName}, {form.Tutar:N2} TL ödeme bildirdi. Onayını bekliyor.",
                 "New payment report",
-                $"A payment of {form.Tutar:N2} TRY is waiting for your approval.",
+                $"{senderName} reported a payment of {form.Tutar:N2} TRY. Please review it.",
                 data: new { route = "BekleyenOdemeler", paymentId = result.Id, houseId = form.HouseId },
                 ct: HttpContext.RequestAborted);
             return CreatedAtAction(nameof(CreatePayment), new { id = result.Id }, result);
@@ -167,13 +173,14 @@ namespace EvArkadasim.API.Controllers
                 return Forbid();
 
             var result = await _mediator.Send(new ApprovePaymentCommand(paymentId));
+            var approverName = await GetDisplayNameAsync(currentUserId.Value);
             await _pushNotifications.SendAsync(
                 payment.BorcluUserId,
                 "payment",
                 "Ödeme onaylandı",
-                $"{payment.Tutar:N2} TL tutarındaki ödemen onaylandı.",
+                $"{approverName}, {payment.Tutar:N2} TL tutarındaki ödemeni onayladı.",
                 "Payment approved",
-                $"Your payment of {payment.Tutar:N2} TRY was approved.",
+                $"{approverName} approved your payment of {payment.Tutar:N2} TRY.",
                 data: new { route = "Bildirimler", paymentId },
                 ct: HttpContext.RequestAborted);
             return Ok(new { success = true, message = "Ödeme başarıyla onaylandı", data = result });
@@ -193,13 +200,14 @@ namespace EvArkadasim.API.Controllers
                 return Forbid();
 
             var result = await _mediator.Send(new RejectPaymentCommand(paymentId));
+            var approverName = await GetDisplayNameAsync(currentUserId.Value);
             await _pushNotifications.SendAsync(
                 payment.BorcluUserId,
                 "payment",
                 "Ödeme reddedildi",
-                $"{payment.Tutar:N2} TL tutarındaki ödeme bildirimin reddedildi.",
+                $"{approverName}, {payment.Tutar:N2} TL tutarındaki ödeme bildirimini reddetti.",
                 "Payment rejected",
-                $"Your payment report of {payment.Tutar:N2} TRY was rejected.",
+                $"{approverName} rejected your payment report of {payment.Tutar:N2} TRY.",
                 data: new { route = "Bildirimler", paymentId },
                 ct: HttpContext.RequestAborted);
             return Ok(new { success = true, message = "Ödeme reddedildi", data = result });
@@ -222,6 +230,23 @@ namespace EvArkadasim.API.Controllers
             var value = User.FindFirstValue(ClaimTypes.NameIdentifier)
                 ?? User.FindFirstValue("sub");
             return int.TryParse(value, out var userId) && userId > 0 ? userId : null;
+        }
+
+        private async Task<string> GetDisplayNameAsync(int userId)
+        {
+            try
+            {
+                var user = await _db.Users.AsNoTracking()
+                    .Where(x => x.Id == userId)
+                    .Select(x => new { x.FirstName, x.LastName })
+                    .FirstOrDefaultAsync();
+                var name = $"{user?.FirstName} {user?.LastName}".Trim();
+                return string.IsNullOrWhiteSpace(name) ? "Bir üye" : name;
+            }
+            catch
+            {
+                return "Bir üye";
+            }
         }
     }
 }
