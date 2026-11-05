@@ -12,6 +12,7 @@ namespace Application.Features.Expenses.Dtos
         public System.DateTime? DueDate { get; set; }
         public int? OdeyenUserId { get; set; }
         public List<int> Participants { get; set; } = new();
+        public List<ShareUnitDto>? ShareUnits { get; set; }
 
         // Şahsi kalemler yalnızca seçilen katılımcılara atanabilir.
         public List<PersonalExpenseDto> SahsiHarcamalar { get; set; } = new();

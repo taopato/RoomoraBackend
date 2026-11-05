@@ -881,6 +881,10 @@ namespace Persistence.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");
 
+                    b.Property<string>("ShareUnitsJson")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
 
@@ -1007,6 +1011,10 @@ namespace Persistence.Migrations
 
                     b.Property<int>("ReceiptId")
                         .HasColumnType("int");
+
+                    b.Property<string>("ShareUnitsJson")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("int");

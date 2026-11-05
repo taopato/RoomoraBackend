@@ -37,6 +37,7 @@ namespace Application.Features.Expenses.Commands.CreateExpense
         public int? InstallmentCount { get; set; }         // örn. 6
         public int? CardholderUserId { get; set; }         // kart sahibi (varsayılan: OdeyenUserId)
         public List<int>? Participants { get; set; }       // boş ise ev üyeleri eşit bölünür
+        public List<ShareUnitDto>? ShareUnits { get; set; } // null: eski eşit paylaşım
 
         // --- Not/Açıklama (FE çok isimle gönderebiliyor) ---
         // FE "note", "Aciklama", "Description" gibi alanlar gönderebilir.

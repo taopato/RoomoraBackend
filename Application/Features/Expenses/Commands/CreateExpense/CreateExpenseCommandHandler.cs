@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Application.Features.Expenses.Dtos;
+using Application.Features.Expenses;
 using Application.Services.Repositories;
 using Domain.Entities;
 using Domain.Enums;
@@ -97,16 +99,24 @@ namespace Application.Features.Expenses.Commands.CreateExpense
             if (personalItems.Any(item => !participants.Contains(item.UserId)))
                 throw new InvalidOperationException("Kişisel kalem yalnızca seçilen katılımcılara eklenebilir.");
 
+            var shareUnits = ShareUnitAllocation.Validate(request.ShareUnits, participants);
+            var sharedShares = shareUnits == null
+                ? BuildEqualShares(sharedAmount, participants)
+                : ShareUnitAllocation.Allocate(sharedAmount, shareUnits);
+            entity.ParticipantsJson = shareUnits == null ? null : JsonSerializer.Serialize(shareUnits);
+            entity.SplitPolicy = shareUnits != null ? PaylasimTuru.Agirlikli
+                : personalItems.Count > 0 ? PaylasimTuru.KisiBazli : PaylasimTuru.Esit;
+
             var created = await _expenseRepository.AddAsync(entity);
             await _expenseRepository.SaveChangesAsync();
 
-            var shareEntities = BuildEqualShares(sharedAmount, participants)
+            var shareEntities = sharedShares
                 .Select(share => new Share
                 {
                     ExpenseId = created.Id,
                     UserId = share.UserId,
                     PaylasimTutar = share.Amount,
-                    PaylasimTuru = PaylasimTuru.Esit,
+                    PaylasimTuru = shareUnits == null ? PaylasimTuru.Esit : PaylasimTuru.Agirlikli,
                     Date = whenUtc
                 })
                 .ToList();
@@ -117,7 +127,7 @@ namespace Application.Features.Expenses.Commands.CreateExpense
                 await _shareRepository.SaveChangesAsync();
             }
 
-            var ledgerLines = BuildLedgerLinesForExpense(created, request.OdeyenUserId, participants, sharedAmount, personalItems);
+            var ledgerLines = BuildLedgerLinesForExpense(created, request.OdeyenUserId, sharedShares, personalItems);
             if (ledgerLines.Count > 0)
             {
                 await _ledgerRepo.AddRangeAsync(ledgerLines, ct);
@@ -163,25 +173,21 @@ namespace Application.Features.Expenses.Commands.CreateExpense
         private static List<LedgerLine> BuildLedgerLinesForExpense(
             Expense expense,
             int payerUserId,
-            List<int> participants,
-            decimal sharedAmount,
+            IReadOnlyList<(int UserId, decimal Amount)> sharedShares,
             List<PersonalExpenseDto> personalItems)
         {
             var result = new List<LedgerLine>();
-            var sharedByUser = BuildEqualShares(sharedAmount, participants)
-                .ToDictionary(x => x.UserId, x => x.Amount);
-
-            foreach (var kvp in sharedByUser)
+            foreach (var kvp in sharedShares)
             {
-                if (kvp.Key == payerUserId || kvp.Value <= 0) continue;
+                if (kvp.UserId == payerUserId || kvp.Amount <= 0) continue;
 
                 result.Add(new LedgerLine
                 {
                     HouseId = expense.HouseId,
                     ExpenseId = expense.Id,
-                    FromUserId = kvp.Key,
+                    FromUserId = kvp.UserId,
                     ToUserId = payerUserId,
-                    Amount = kvp.Value,
+                    Amount = kvp.Amount,
                     PostDate = expense.PostDate,
                     IsActive = true,
                     CreatedAt = DateTime.UtcNow

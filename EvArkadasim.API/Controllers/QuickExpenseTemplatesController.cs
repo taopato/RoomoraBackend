@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Persistence.Contexts;
+using Application.Features.Expenses;
+using Application.Features.Expenses.Dtos;
 
 namespace EvArkadasim.API.Controllers;
 
@@ -19,6 +21,7 @@ public sealed class QuickExpenseTemplateRequest
     public int PayerUserId { get; set; }
     public List<int> ParticipantUserIds { get; set; } = new();
     public Dictionary<int, decimal> PersonalAmounts { get; set; } = new();
+    public List<ShareUnitDto>? ShareUnits { get; set; }
 }
 
 [ApiController]
@@ -113,6 +116,8 @@ public class QuickExpenseTemplatesController : ControllerBase
             return BadRequest(new { message = "Kisisel paylar katilimcilarla uyumlu degil." });
         if (personalAmounts.Values.Sum() > request.Amount)
             return BadRequest(new { message = "Kisisel paylar toplam tutari gecemez." });
+        try { ShareUnitAllocation.Validate(request.ShareUnits, participantIds); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         return null;
     }
 
@@ -126,6 +131,13 @@ public class QuickExpenseTemplatesController : ControllerBase
         entity.PayerUserId = request.PayerUserId;
         entity.ParticipantUserIdsJson = JsonSerializer.Serialize((request.ParticipantUserIds ?? new()).Distinct().OrderBy(x => x));
         entity.PersonalAmountsJson = JsonSerializer.Serialize(request.PersonalAmounts ?? new());
+        if (request.ShareUnits is not null)
+            entity.ShareUnitsJson = JsonSerializer.Serialize(ShareUnitAllocation.Validate(
+                request.ShareUnits, (request.ParticipantUserIds ?? new()).Distinct().ToList()) ?? new());
+        else if (ShareUnitAllocation.ReadStored(entity.ShareUnitsJson)
+            .Select(unit => unit.UserId).OrderBy(id => id)
+            .SequenceEqual((request.ParticipantUserIds ?? new()).Distinct().OrderBy(id => id)) == false)
+            entity.ShareUnitsJson = null;
         entity.UpdatedAt = DateTime.UtcNow;
     }
 
@@ -140,6 +152,7 @@ public class QuickExpenseTemplatesController : ControllerBase
         entity.PayerUserId,
         participantUserIds = Deserialize<List<int>>(entity.ParticipantUserIdsJson) ?? new(),
         personalAmounts = Deserialize<Dictionary<int, decimal>>(entity.PersonalAmountsJson) ?? new(),
+        shareUnits = ShareUnitAllocation.ReadStored(entity.ShareUnitsJson),
         entity.UpdatedAt,
     };
 

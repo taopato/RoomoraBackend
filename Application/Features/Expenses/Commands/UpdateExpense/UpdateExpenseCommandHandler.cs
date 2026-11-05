@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Application.Features.Expenses.Dtos;
+using Application.Features.Expenses;
 using Application.Services.Repositories;
 using Domain.Entities;
 using Domain.Enums;
@@ -91,10 +93,21 @@ namespace Application.Features.Expenses.Commands.UpdateExpense
             if (personalItems.Any(item => !participants.Contains(item.UserId)))
                 throw new InvalidOperationException("Kişisel kalemler yalnızca seçilen katılımcılara atanabilir.");
 
+            var storedUnits = ShareUnitAllocation.ReadStored(expense.ParticipantsJson);
+            var requestedUnits = request.Dto.ShareUnits ??
+                (storedUnits.Count > 0 && storedUnits.Select(x => x.UserId).OrderBy(x => x)
+                    .SequenceEqual(participants.OrderBy(x => x)) ? storedUnits : new List<ShareUnitDto>());
+            var shareUnits = ShareUnitAllocation.Validate(requestedUnits, participants);
+            var sharedShares = shareUnits == null
+                ? BuildEqualShares(sharedAmount, participants)
+                : ShareUnitAllocation.Allocate(sharedAmount, shareUnits);
+
             expense.Tur = request.Dto.Tur;
             expense.Tutar = request.Dto.Tutar;
             expense.OrtakHarcamaTutari = sharedAmount;
-            expense.SplitPolicy = personalItems.Count > 0 ? PaylasimTuru.KisiBazli : PaylasimTuru.Esit;
+            expense.SplitPolicy = shareUnits != null ? PaylasimTuru.Agirlikli
+                : personalItems.Count > 0 ? PaylasimTuru.KisiBazli : PaylasimTuru.Esit;
+            expense.ParticipantsJson = shareUnits == null ? null : JsonSerializer.Serialize(shareUnits);
 
             if (request.Dto.Category.HasValue)
                 expense.Category = request.Dto.Category.Value;
@@ -135,14 +148,14 @@ namespace Application.Features.Expenses.Commands.UpdateExpense
                 });
             }
 
-            foreach (var share in BuildEqualShares(sharedAmount, participants))
+            foreach (var share in sharedShares)
             {
                 await _shareRepo.AddAsync(new Share
                 {
                     ExpenseId = expense.Id,
                     UserId = share.UserId,
                     PaylasimTutar = share.Amount,
-                    PaylasimTuru = PaylasimTuru.Esit
+                    PaylasimTuru = shareUnits == null ? PaylasimTuru.Esit : PaylasimTuru.Agirlikli
                 });
             }
 
@@ -157,7 +170,7 @@ namespace Application.Features.Expenses.Commands.UpdateExpense
                 await _ledgerRepo.UpdateAsync(line, ct);
             }
 
-            var newLines = BuildLedgerLines(expense, participants, sharedAmount, personalItems);
+            var newLines = BuildLedgerLines(expense, sharedShares, personalItems);
             if (newLines.Count > 0)
             {
                 await _ledgerRepo.AddRangeAsync(newLines, ct);
@@ -202,13 +215,12 @@ namespace Application.Features.Expenses.Commands.UpdateExpense
 
         private static List<LedgerLine> BuildLedgerLines(
             Expense expense,
-            List<int> participants,
-            decimal sharedAmount,
+            IReadOnlyList<(int UserId, decimal Amount)> sharedShares,
             List<PersonalExpenseDto> personalItems)
         {
             var result = new List<LedgerLine>();
 
-            foreach (var share in BuildEqualShares(sharedAmount, participants))
+            foreach (var share in sharedShares)
             {
                 if (share.UserId == expense.OdeyenUserId || share.Amount <= 0) continue;
 

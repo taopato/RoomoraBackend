@@ -1,6 +1,7 @@
 using Application.Features.Expenses.Commands.CreateExpense;
 using Application.Features.Expenses.Commands.UpdateExpense;
 using Application.Features.Expenses.Dtos;
+using Application.Features.Expenses;
 using Domain.Entities;
 using Domain.Enums;
 using EvArkadasim.API.Services.Receipts;
@@ -208,6 +209,8 @@ namespace EvArkadasim.API.Controllers
                 return Forbid();
             if (receipt.Status == ReceiptStatus.Converted)
                 return Conflict(new { message = "Harcamaya dönüştürülmüş fiş yeniden işlenemez." });
+            if (receipt.Items.Any(item => !string.IsNullOrWhiteSpace(item.ShareUnitsJson)))
+                return Conflict(new { message = "Özel paylaşımı olan fiş yeniden işlenemez." });
             if (string.IsNullOrWhiteSpace(receipt.ImageUrl)) return BadRequest(new { message = "Fiş görseli bulunamadı." });
 
             var relativePath = receipt.ImageUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
@@ -241,6 +244,9 @@ namespace EvArkadasim.API.Controllers
                 return Conflict(new { message = "Harcamaya dönüştürülmüş fiş değiştirilemez." });
             if (request.Items is null || request.Items.Count is < 1 or > 100)
                 return BadRequest(new { message = "Fişte 1 ile 100 arasında kalem bulunmalıdır." });
+            if (receipt.Items.Any(item => !string.IsNullOrWhiteSpace(item.ShareUnitsJson))
+                && request.Items.Any(item => item.ShareUnits == null))
+                return Conflict(new { message = "Özel paylaştırmayı düzenlemek için uygulamayı güncelleyin." });
             if (request.DetectedTotalAmount < 0)
                 return BadRequest(new { message = "Fiş toplamı negatif olamaz." });
 
@@ -290,6 +296,9 @@ namespace EvArkadasim.API.Controllers
                 var item = normalized.Item;
                 var name = normalized.Name!;
                 var participantIds = ResolveRequestedParticipantIds(item, activeMemberIds);
+                List<ShareUnitDto>? shareUnits;
+                try { shareUnits = ShareUnitAllocation.Validate(item.ShareUnits, participantIds); }
+                catch (InvalidOperationException error) { return BadRequest(new { message = error.Message }); }
                 var isAssigned = item.IsAssigned || participantIds.Count > 0;
                 var isSharedWithWholeHouse = isAssigned && participantIds.Count == activeMemberIds.Count;
                 receipt.Items.Add(new ReceiptItem
@@ -306,6 +315,7 @@ namespace EvArkadasim.API.Controllers
                     IsShared = isSharedWithWholeHouse,
                     PersonalUserId = participantIds.Count == 1 ? participantIds[0] : null,
                     ParticipantUserIdsJson = isAssigned ? JsonSerializer.Serialize(participantIds) : null,
+                    ShareUnitsJson = shareUnits == null ? null : JsonSerializer.Serialize(shareUnits),
                     SortOrder = normalized.SortOrder,
                 });
             }
@@ -344,6 +354,10 @@ namespace EvArkadasim.API.Controllers
                 item => ResolveStoredParticipantIds(item, activeMemberIds));
             if (itemParticipants.Values.Any(ids => ids.Count == 0 || ids.Any(id => !activeMemberIds.Contains(id))))
                 return BadRequest(new { message = "Fiş kalemlerinin tamamı en az bir aktif ev üyesine atanmalıdır." });
+            if (receipt.Items.Any(item =>
+                ShareUnitAllocation.ReadStored(item.ShareUnitsJson).Any(unit =>
+                    !activeMemberIds.Contains(unit.UserId) || !itemParticipants[item.Id].Contains(unit.UserId))))
+                return BadRequest(new { message = "Fişteki özel paylardan biri artık aktif ev üyesine ait değil." });
             if (request.Category.HasValue && !Enum.IsDefined(request.Category.Value))
                 return BadRequest(new { message = "Geçersiz harcama kategorisi." });
 
@@ -352,13 +366,17 @@ namespace EvArkadasim.API.Controllers
             foreach (var item in receipt.Items)
             {
                 var participantIds = itemParticipants[item.Id];
-                if (participantIds.Count == activeMemberIds.Count)
+                var shareUnits = ShareUnitAllocation.ReadStored(item.ShareUnitsJson);
+                if (shareUnits.Count == 0 && participantIds.Count == activeMemberIds.Count)
                 {
                     sharedTotal += item.LineTotal;
                     continue;
                 }
 
-                foreach (var share in SplitAmount(item.LineTotal, participantIds))
+                var allocations = shareUnits.Count == 0
+                    ? SplitAmount(item.LineTotal, participantIds)
+                    : ShareUnitAllocation.Allocate(item.LineTotal, shareUnits);
+                foreach (var share in allocations)
                     personalTotals[share.UserId] += share.Amount;
             }
 
@@ -425,6 +443,9 @@ namespace EvArkadasim.API.Controllers
                 return Conflict(new { message = "Yalnızca harcamaya dönüştürülmüş fişler bu uçtan güncellenebilir." });
             if (request.Items is null || request.Items.Count is < 1 or > 100)
                 return BadRequest(new { message = "Fişte 1 ile 100 arasında kalem bulunmalıdır." });
+            if (receipt.Items.Any(item => !string.IsNullOrWhiteSpace(item.ShareUnitsJson))
+                && request.Items.Any(item => item.ShareUnits == null))
+                return Conflict(new { message = "Özel paylaştırmayı düzenlemek için uygulamayı güncelleyin." });
 
             var activeMemberIds = await GetActiveHouseMemberIdsAsync(receipt.HouseId, cancellationToken);
             if (!activeMemberIds.Contains(request.PayerUserId))
@@ -458,17 +479,28 @@ namespace EvArkadasim.API.Controllers
                 || x.Participants.Any(id => !activeMemberIds.Contains(id))))
                 return BadRequest(new { message = "Her fiş kalemi en az bir aktif ev üyesine atanmalıdır." });
 
+            var itemUnits = new Dictionary<UpdateReceiptItemRequest, List<ShareUnitDto>?>();
+            foreach (var normalized in normalizedItems)
+            {
+                try { itemUnits[normalized.Item] = ShareUnitAllocation.Validate(normalized.Item.ShareUnits, normalized.Participants); }
+                catch (InvalidOperationException error) { return BadRequest(new { message = error.Message }); }
+            }
+
             var sharedTotal = 0m;
             var personalTotals = activeMemberIds.ToDictionary(id => id, _ => 0m);
             foreach (var item in normalizedItems)
             {
-                if (item.Participants.Count == activeMemberIds.Count)
+                var shareUnits = itemUnits[item.Item];
+                if (shareUnits == null && item.Participants.Count == activeMemberIds.Count)
                 {
                     sharedTotal += item.LineTotal;
                     continue;
                 }
 
-                foreach (var share in SplitAmount(item.LineTotal, item.Participants))
+                var allocations = shareUnits == null
+                    ? SplitAmount(item.LineTotal, item.Participants)
+                    : ShareUnitAllocation.Allocate(item.LineTotal, shareUnits);
+                foreach (var share in allocations)
                     personalTotals[share.UserId] += share.Amount;
             }
 
@@ -503,6 +535,8 @@ namespace EvArkadasim.API.Controllers
                     IsShared = normalized.Participants.Count == activeMemberIds.Count,
                     PersonalUserId = normalized.Participants.Count == 1 ? normalized.Participants[0] : null,
                     ParticipantUserIdsJson = JsonSerializer.Serialize(normalized.Participants),
+                    ShareUnitsJson = itemUnits[normalized.Item] == null
+                        ? null : JsonSerializer.Serialize(itemUnits[normalized.Item]),
                     SortOrder = normalized.SortOrder
                 });
             }
@@ -597,6 +631,7 @@ namespace EvArkadasim.API.Controllers
                         item.IsShared,
                         item.PersonalUserId,
                         ParticipantUserIds = ParseParticipantUserIds(item.ParticipantUserIdsJson),
+                        ShareUnits = ShareUnitAllocation.ReadStored(item.ShareUnitsJson),
                         item.SortOrder
                     })
                     .ToList()
@@ -809,6 +844,7 @@ namespace EvArkadasim.API.Controllers
         public bool IsShared { get; set; } = true;
         public int? PersonalUserId { get; set; }
         public List<int>? ParticipantUserIds { get; set; }
+        public List<ShareUnitDto>? ShareUnits { get; set; }
         public int SortOrder { get; set; }
     }
 

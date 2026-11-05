@@ -12,6 +12,7 @@ public class QuickExpenseTemplate
     public int PayerUserId { get; set; }
     public string ParticipantUserIdsJson { get; set; } = "[]";
     public string PersonalAmountsJson { get; set; } = "{}";
+    public string? ShareUnitsJson { get; set; }
     public bool IsArchived { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

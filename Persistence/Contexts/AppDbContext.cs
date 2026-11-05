@@ -165,6 +165,7 @@ namespace Persistence.Contexts
                 template.Property(x => x.Amount).HasPrecision(18, 2);
                 template.Property(x => x.ParticipantUserIdsJson).HasMaxLength(2000);
                 template.Property(x => x.PersonalAmountsJson).HasMaxLength(4000);
+                template.Property(x => x.ShareUnitsJson).HasMaxLength(4000);
                 template.HasIndex(x => new { x.OwnerUserId, x.HouseId, x.IsArchived });
                 template.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
                 template.HasOne<House>().WithMany().HasForeignKey(x => x.HouseId).OnDelete(DeleteBehavior.Cascade);
@@ -354,6 +355,7 @@ namespace Persistence.Contexts
                 rib.Property(x => x.LineTotal).HasColumnType("decimal(18,2)");
                 rib.Property(x => x.IsAssigned).HasDefaultValue(false);
                 rib.Property(x => x.ParticipantUserIdsJson).HasMaxLength(2000);
+                rib.Property(x => x.ShareUnitsJson).HasMaxLength(2000);
             });
 
         }
