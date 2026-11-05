@@ -188,9 +188,9 @@ namespace EvArkadasim.API.Controllers
             if (receipt.Status == ReceiptStatus.Converted || receipt.ConvertedExpenseId.HasValue)
                 return Conflict(new { message = "Harcamaya dönüştürülmüş fiş silinemez." });
 
-            _dbContext.Receipts.Remove(receipt);
+            receipt.DeletedAt = DateTime.UtcNow;
+            receipt.UpdatedAt = receipt.DeletedAt;
             await _dbContext.SaveChangesAsync(cancellationToken);
-            DeleteReceiptFile(receipt.ImageUrl);
             return NoContent();
         }
 
@@ -800,20 +800,6 @@ namespace EvArkadasim.API.Controllers
             };
         }
 
-        private void DeleteReceiptFile(string? imageUrl)
-        {
-            if (string.IsNullOrWhiteSpace(imageUrl) ||
-                !imageUrl.StartsWith("/uploads/receipts/", StringComparison.OrdinalIgnoreCase))
-                return;
-
-            var webRoot = _environment.WebRootPath ?? Path.Combine(_environment.ContentRootPath, "wwwroot");
-            var receiptsRoot = Path.GetFullPath(Path.Combine(webRoot, "uploads", "receipts"));
-            var relativePath = imageUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-            var fullPath = Path.GetFullPath(Path.Combine(webRoot, relativePath));
-            var rootPrefix = receiptsRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            if (fullPath.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(fullPath))
-                System.IO.File.Delete(fullPath);
-        }
     }
 
     public class ReceiptScanRequest

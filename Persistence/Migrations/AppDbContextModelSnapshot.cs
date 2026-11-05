@@ -911,6 +911,9 @@ namespace Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<decimal?>("DetectedTotalAmount")
                         .HasColumnType("decimal(18,2)");
 

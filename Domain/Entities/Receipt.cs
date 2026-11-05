@@ -32,6 +32,7 @@ namespace Domain.Entities
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? UpdatedAt { get; set; }
+        public DateTime? DeletedAt { get; set; }
 
         public ICollection<ReceiptItem> Items { get; set; } = new List<ReceiptItem>();
     }

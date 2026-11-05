@@ -322,6 +322,7 @@ namespace Persistence.Contexts
 
             modelBuilder.Entity<Receipt>(rb =>
             {
+                rb.HasQueryFilter(x => x.DeletedAt == null);
                 rb.Property(x => x.ImageUrl).HasMaxLength(1024).IsRequired();
                 rb.Property(x => x.StoreName).HasMaxLength(256);
                 rb.Property(x => x.DetectedTotalAmount).HasColumnType("decimal(18,2)");
@@ -349,6 +350,7 @@ namespace Persistence.Contexts
 
             modelBuilder.Entity<ReceiptItem>(rib =>
             {
+                rib.HasQueryFilter(x => x.Receipt.DeletedAt == null);
                 rib.Property(x => x.Name).HasMaxLength(256).IsRequired();
                 rib.Property(x => x.Price).HasColumnType("decimal(18,2)");
                 rib.Property(x => x.Quantity).HasColumnType("decimal(18,2)");
