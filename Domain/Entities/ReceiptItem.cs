@@ -20,6 +20,7 @@ namespace Domain.Entities
         public bool IsShared { get; set; } = true;
         public int? PersonalUserId { get; set; }
         public string? ParticipantUserIdsJson { get; set; }
+        public string? ShareUnitsJson { get; set; }
 
         public int SortOrder { get; set; }
     }

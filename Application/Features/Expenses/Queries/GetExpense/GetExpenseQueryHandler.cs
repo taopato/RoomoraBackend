@@ -2,6 +2,7 @@
 using Application.Features.Expenses.Dtos;
 using Application.Services.Repositories;
 using Domain.Entities;
+using Application.Features.Expenses;
 
 namespace Application.Features.Expenses.Queries.GetExpense
 {
@@ -59,6 +60,7 @@ namespace Application.Features.Expenses.Queries.GetExpense
                 .ToList();
 
             dto.OrtakHarcamaTutari = e.OrtakHarcamaTutari;
+            dto.ShareUnits = ShareUnitAllocation.ReadStored(e.ParticipantsJson);
 
             // 🔹 Notu description'a yansıt
             if (string.IsNullOrWhiteSpace(dto.Description))
