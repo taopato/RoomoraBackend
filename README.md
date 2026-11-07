@@ -1,6 +1,6 @@
 # Roomora Backend
 
-Roomora'nin backend servisi; kimlik dogrulama, ev ve uye yonetimi, harcama akislari, duzenli gider planlari, odemeler ve borc-alacak hesaplarini tek bir API altinda toplar.
+Roomora'nin backend servisi; kimlik dogrulama, ev/gezi gruplari, harcamalar, duzenli giderler, odemeler ve borc-alacak hesaplarini tek bir API altinda toplar.
 
 Yapi, is kurallarini ve veri erisimini ayri katmanlarda tutan bir Clean Architecture duzeni uzerine kuruludur. Ama amac yalnizca teknik olarak duzgun olmak degil; urun tarafinda hizli ilerlerken bakimi da kolay tutmaktir.
 
@@ -13,6 +13,7 @@ Yapi, is kurallarini ve veri erisimini ayri katmanlarda tutan bir Clean Architec
 - Ledger tabanli borc-alacak hesaplamalari
 - Odeme ve onay mekanizmalari
 - Fis, belge ve destekleyici servis akislari
+- Secili uyelerle paylasilan gezi giderleri ve kullaniciya ozel hizli harcama sablonlari
 
 ## Teknoloji
 
@@ -62,6 +63,8 @@ Blue-green production yayini, rollback ve yedekleme akisi icin
 - `Persistence`: veritabani, EF Core ve repository katmani
 - `Domain`: entity ve enum tanimlari
 - `Core`: ortak yardimci yapilar ve guvenlik bilesenleri
+
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) istek, veri ve deployment akislarini gosterir. `Persistence/Migrations` gercek veritabani gecmisidir; uygulama yayindayken adlari veya sirasiyla oynanmaz.
 
 ## Yaklasim
 
