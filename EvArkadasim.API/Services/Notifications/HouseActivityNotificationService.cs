@@ -25,6 +25,21 @@ public sealed class HouseActivityNotificationService
     {
         try
         {
+            var payerId = await _db.Expenses.AsNoTracking()
+                .Where(expense => expense.Id == expenseId && expense.IsActive)
+                .Select(expense => expense.OdeyenUserId)
+                .FirstOrDefaultAsync();
+            var affectedUserIds = (await _db.Shares.AsNoTracking()
+                    .Where(share => share.ExpenseId == expenseId && share.PaylasimTutar > 0)
+                    .Select(share => share.UserId)
+                    .ToListAsync())
+                .Concat(await _db.PersonalExpenses.AsNoTracking()
+                    .Where(item => item.ExpenseId == expenseId && item.Tutar > 0)
+                    .Select(item => item.UserId)
+                    .ToListAsync())
+                .ToHashSet();
+            if (payerId > 0) affectedUserIds.Add(payerId);
+
             var members = await _db.HouseMembers.AsNoTracking()
                 .Where(member => member.HouseId == houseId && member.IsActive && member.User.IsActive)
                 .Select(member => new { member.UserId, member.User.FirstName, member.User.LastName })
@@ -38,7 +53,7 @@ public sealed class HouseActivityNotificationService
             var amountTr = amount.ToString("N2", CultureInfo.GetCultureInfo("tr-TR"));
             var amountEn = amount.ToString("N2", CultureInfo.GetCultureInfo("en-US"));
 
-            foreach (var member in members.Where(member => member.UserId != actorId))
+            foreach (var member in members.Where(member => member.UserId != actorId && affectedUserIds.Contains(member.UserId)))
             {
                 await _push.SendAsync(
                     member.UserId,
