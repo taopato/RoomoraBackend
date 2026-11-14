@@ -937,6 +937,10 @@ namespace Persistence.Migrations
                     b.Property<DateTime?>("ReceiptDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("SecondImageUrl")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 

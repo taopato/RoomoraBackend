@@ -16,6 +16,9 @@ namespace Domain.Entities
         [MaxLength(1024)]
         public string ImageUrl { get; set; } = string.Empty;
 
+        [MaxLength(1024)]
+        public string? SecondImageUrl { get; set; }
+
         public string? RawOcrText { get; set; }
 
         [MaxLength(256)]
