@@ -43,7 +43,7 @@ namespace EvArkadasim.API.Controllers
 
         [HttpPost("Scan")]
         [Consumes("multipart/form-data")]
-        [RequestSizeLimit(20_000_000)]
+        [RequestSizeLimit(26_000_000)]
         public async Task<IActionResult> Scan([FromForm] ReceiptScanRequest request, CancellationToken cancellationToken)
         {
             var currentUserId = GetCurrentUserId();
@@ -63,6 +63,12 @@ namespace EvArkadasim.API.Controllers
                 return BadRequest(new { message = "Fiş için JPG, PNG veya WEBP formatında bir görsel yükleyin." });
             if (!await HasValidImageSignatureAsync(request.Image, cancellationToken))
                 return BadRequest(new { message = "Fiş görselinin dosya içeriği geçerli değil." });
+            if (request.Image2 is { Length: 0 })
+                return BadRequest(new { message = "İkinci fiş görseli boş olamaz." });
+            if (request.Image2 is { Length: > 0 } secondImage &&
+                (secondImage.Length > 12_000_000 || !allowedTypes.Contains(secondImage.ContentType) ||
+                 !await HasValidImageSignatureAsync(secondImage, cancellationToken)))
+                return BadRequest(new { message = "İkinci fiş görseli geçersiz veya 12 MB sınırını aşıyor." });
 
             var turkeyToday = DateTime.UtcNow.AddHours(3).Date;
             var uploadsRoot = Path.Combine(_environment.WebRootPath ?? Path.Combine(_environment.ContentRootPath, "wwwroot"), "uploads", "receipts");
@@ -76,6 +82,19 @@ namespace EvArkadasim.API.Controllers
             };
             var fileName = $"{request.HouseId}_{currentUserId.Value}_{turkeyToday:yyyyMMdd}_{Guid.NewGuid():N}{safeExtension}";
             var fullPath = Path.Combine(uploadsRoot, fileName);
+            string? secondFileName = null;
+            string? secondFullPath = null;
+            if (request.Image2 is { Length: > 0 })
+            {
+                var secondExtension = request.Image2.ContentType.ToLowerInvariant() switch
+                {
+                    "image/png" => ".png",
+                    "image/webp" => ".webp",
+                    _ => ".jpg"
+                };
+                secondFileName = $"{Path.GetFileNameWithoutExtension(fileName)}_part2{secondExtension}";
+                secondFullPath = Path.Combine(uploadsRoot, secondFileName);
+            }
 
             try
             {
@@ -83,18 +102,30 @@ namespace EvArkadasim.API.Controllers
                 {
                     await request.Image.CopyToAsync(target, cancellationToken);
                 }
+                if (secondFullPath != null && request.Image2 != null)
+                {
+                    await using var target = System.IO.File.Create(secondFullPath);
+                    await request.Image2.CopyToAsync(target, cancellationToken);
+                }
 
                 ReceiptOcrResult ocrResult;
-                await using (var readStream = request.Image.OpenReadStream())
+                await using var upperStream = request.Image.OpenReadStream();
+                if (secondFullPath != null && request.Image2 != null)
                 {
-                    ocrResult = await _ocrService.ExtractAsync(readStream, request.Image.FileName, cancellationToken);
+                    await using var lowerStream = request.Image2.OpenReadStream();
+                    var upperTask = _ocrService.ExtractAsync(upperStream, request.Image.FileName, cancellationToken);
+                    var lowerTask = _ocrService.ExtractAsync(lowerStream, request.Image2.FileName, cancellationToken);
+                    await Task.WhenAll(upperTask, lowerTask);
+                    ocrResult = ReceiptOcrParts.Merge(upperTask.Result, lowerTask.Result);
                 }
+                else ocrResult = await _ocrService.ExtractAsync(upperStream, request.Image.FileName, cancellationToken);
 
                 var receipt = new Receipt
                 {
                     HouseId = request.HouseId,
                     UploadedByUserId = currentUserId.Value,
                     ImageUrl = $"/uploads/receipts/{fileName}",
+                    SecondImageUrl = secondFileName == null ? null : $"/uploads/receipts/{secondFileName}",
                     CreatedAt = DateTime.UtcNow,
                 };
                 ApplyOcrResult(receipt, ocrResult, turkeyToday);
@@ -108,6 +139,8 @@ namespace EvArkadasim.API.Controllers
             {
                 if (System.IO.File.Exists(fullPath))
                     System.IO.File.Delete(fullPath);
+                if (secondFullPath != null && System.IO.File.Exists(secondFullPath))
+                    System.IO.File.Delete(secondFullPath);
                 throw;
             }
         }
@@ -130,6 +163,7 @@ namespace EvArkadasim.API.Controllers
                     x.HouseId,
                     x.UploadedByUserId,
                     x.ImageUrl,
+                    x.SecondImageUrl,
                     x.StoreName,
                     x.ReceiptDate,
                     x.DetectedTotalAmount,
@@ -224,6 +258,15 @@ namespace EvArkadasim.API.Controllers
 
             await using var stream = System.IO.File.OpenRead(fullPath);
             var ocrResult = await _ocrService.ExtractAsync(stream, Path.GetFileName(fullPath), cancellationToken);
+            if (!string.IsNullOrWhiteSpace(receipt.SecondImageUrl))
+            {
+                var secondRelativePath = receipt.SecondImageUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+                var secondFullPath = Path.Combine(webRoot, secondRelativePath);
+                if (!System.IO.File.Exists(secondFullPath)) return NotFound("İkinci fiş görseli bulunamadı.");
+                await using var secondStream = System.IO.File.OpenRead(secondFullPath);
+                var lowerResult = await _ocrService.ExtractAsync(secondStream, Path.GetFileName(secondFullPath), cancellationToken);
+                ocrResult = ReceiptOcrParts.Merge(ocrResult, lowerResult);
+            }
 
             ApplyOcrResult(receipt, ocrResult);
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -608,6 +651,7 @@ namespace EvArkadasim.API.Controllers
                 receipt.HouseId,
                 receipt.UploadedByUserId,
                 receipt.ImageUrl,
+                receipt.SecondImageUrl,
                 receipt.ImageWidth,
                 receipt.ImageHeight,
                 receipt.RawOcrText,
@@ -811,6 +855,7 @@ namespace EvArkadasim.API.Controllers
     {
         public int HouseId { get; set; }
         public IFormFile? Image { get; set; }
+        public IFormFile? Image2 { get; set; }
     }
 
     public class UpdateReceiptRequest

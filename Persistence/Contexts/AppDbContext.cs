@@ -324,6 +324,7 @@ namespace Persistence.Contexts
             {
                 rb.HasQueryFilter(x => x.DeletedAt == null);
                 rb.Property(x => x.ImageUrl).HasMaxLength(1024).IsRequired();
+                rb.Property(x => x.SecondImageUrl).HasMaxLength(1024);
                 rb.Property(x => x.StoreName).HasMaxLength(256);
                 rb.Property(x => x.DetectedTotalAmount).HasColumnType("decimal(18,2)");
                 rb.Property(x => x.Status).HasConversion<int>();
