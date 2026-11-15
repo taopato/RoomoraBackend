@@ -13,6 +13,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Persistence", "Persistence\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EvArkadasim.API", "EvArkadasim.API\EvArkadasim.API.csproj", "{FA3D1E22-B993-49B6-B5D4-F546F6F74133}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{A0133920-F2C7-4111-9DD5-ACE25BC3F446}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExpenseValidationSmoke", "Tests\ExpenseValidationSmoke\ExpenseValidationSmoke.csproj", "{315C3F3E-E666-4918-AD10-619E88700324}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -39,11 +43,18 @@ Global
 		{FA3D1E22-B993-49B6-B5D4-F546F6F74133}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FA3D1E22-B993-49B6-B5D4-F546F6F74133}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FA3D1E22-B993-49B6-B5D4-F546F6F74133}.Release|Any CPU.Build.0 = Release|Any CPU
+		{315C3F3E-E666-4918-AD10-619E88700324}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{315C3F3E-E666-4918-AD10-619E88700324}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{315C3F3E-E666-4918-AD10-619E88700324}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{315C3F3E-E666-4918-AD10-619E88700324}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {9F61A069-99C7-431F-80A4-593DAA1D6359}
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{315C3F3E-E666-4918-AD10-619E88700324} = {A0133920-F2C7-4111-9DD5-ACE25BC3F446}
 	EndGlobalSection
 EndGlobal
