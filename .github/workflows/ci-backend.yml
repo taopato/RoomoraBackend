@@ -25,5 +25,8 @@ jobs:
       - name: Build
         run: dotnet build EvArkadasim.sln --configuration Release --no-restore
 
+      - name: Expense validation smoke test
+        run: dotnet run --project Tests/ExpenseValidationSmoke/ExpenseValidationSmoke.csproj --configuration Release --no-build
+
       - name: Build Docker image
         run: docker build --tag roomora-backend:ci .

@@ -24,8 +24,9 @@ namespace Application.Features.Expenses.Commands.CreateExpense
             // INSTALLMENT kuralları
             When(x => (x.Mode ?? "").Trim().ToLower() == "installment" || (x.InstallmentCount ?? 0) > 1, () =>
             {
-                RuleFor(x => x.InstallmentCount!.Value)
-                    .GreaterThan(1).WithMessage("Taksitli alışverişte InstallmentCount > 1 olmalı.");
+                RuleFor(x => x.InstallmentCount)
+                    .Must(count => count is >= 1 and <= 60)
+                    .WithMessage("Taksit sayısı 1 ile 60 arasında olmalı.");
 
                 RuleFor(x => x.CardholderUserId ?? x.OdeyenUserId)
                     .GreaterThan(0).WithMessage("Kart sahibi (CardholderUserId) geçerli olmalı.");
@@ -53,9 +54,12 @@ namespace Application.Features.Expenses.Commands.CreateExpense
                 RuleFor(x => x.StartMonth)
                     .NotNull().Unless(x => x.Date != default)
                     .WithMessage("StartMonth veya Date verilmelidir.");
-            })
-            // Eski akış (mode yok) için toplama eşitlik kuralı
-            .Otherwise(() =>
+            });
+
+            // Yalnizca tek seferlik harcamalar sahsi/ortak tutar dagilimi tasir.
+            When(x => (x.Mode ?? "").Trim().ToLowerInvariant() != "recurring"
+                && (x.Mode ?? "").Trim().ToLowerInvariant() != "installment"
+                && (x.InstallmentCount ?? 0) <= 1, () =>
             {
                 RuleFor(x => x).Custom((cmd, ctx) =>
                 {
