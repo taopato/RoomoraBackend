@@ -392,6 +392,8 @@ namespace EvArkadasim.API.Controllers
                 || Math.Abs(receipt.DetectedTotalAmount.Value - itemTotal) > 0.02m
                 || receipt.Items.Any(x => IsAggregateReceiptItem(x.Name)))
                 return BadRequest(new { message = "Fiş toplamı ve kalemler doğrulanmadan harcamaya dönüştürülemez." });
+            if (!ReceiptQuantityValidation.Matches(receipt.RawOcrText, receipt.Items.Select(x => (x.Quantity, x.LineTotal))))
+                return BadRequest(new { message = "Fişteki adet satırları kalem miktarlarıyla uyuşmuyor." });
 
             var activeMemberIds = await GetActiveHouseMemberIdsAsync(receipt.HouseId, cancellationToken);
             if (!activeMemberIds.Contains(request.PayerUserId))
@@ -523,6 +525,8 @@ namespace EvArkadasim.API.Controllers
                 || Math.Abs(request.DetectedTotalAmount.Value - normalizedItems.Sum(x => x.LineTotal)) > 0.02m
                 || normalizedItems.Any(x => IsAggregateReceiptItem(x.Name)))
                 return BadRequest(new { message = "Fiş toplamı ve kalemler doğrulanmalıdır." });
+            if (!ReceiptQuantityValidation.Matches(receipt.RawOcrText, normalizedItems.Select(x => (x.Quantity, x.LineTotal))))
+                return BadRequest(new { message = "Fişteki adet satırları kalem miktarlarıyla uyuşmuyor." });
             if (normalizedItems.Any(x => x.Participants.Count == 0
                 || x.Participants.Any(id => !activeMemberIds.Contains(id))))
                 return BadRequest(new { message = "Her fiş kalemi en az bir aktif ev üyesine atanmalıdır." });

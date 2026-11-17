@@ -35,6 +35,12 @@ var synthetic = ReceiptOcrParts.Merge(
     lower);
 Require(synthetic.Items.Count == 1 && synthetic.Items[0].Name == "Makarna", "Fallback total must not become a product");
 
+const string quantityReceipt = "DAYCARE %20 *54.50\n2 ad X 43.25\nSUT %1 *86.50\n2 ad X 1.00\nPOSET %20 *2.00";
+Require(!ReceiptQuantityValidation.Matches(quantityReceipt, [(1m, 54.50m), (1m, 86.50m), (1m, 2m)]),
+    "Equal paid totals must not hide wrong quantities");
+Require(ReceiptQuantityValidation.Matches(quantityReceipt, [(1m, 54.50m), (2m, 86.50m), (2m, 2m)]),
+    "Quantity rows should belong to the following priced products");
+
 Console.WriteLine("ReceiptPartsSmoke passed");
 
 static void Require(bool condition, string message)
