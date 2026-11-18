@@ -9,5 +9,6 @@ namespace Application.Services.Repositories
         Task<VerificationCode> AddAsync(VerificationCode entity);
         Task<VerificationCode?> GetByEmailAndCodeAsync(string email, string code);
         Task DeleteAsync(VerificationCode entity);
+        Task DeleteByEmailAsync(string email);
     }
 }

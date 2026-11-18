@@ -31,6 +31,10 @@ public static class ReceiptQuantityValidation
                 if (Math.Abs(quantity * unit - lineTotal) > 0.02m) break;
                 var itemIndex = available.FindIndex(item =>
                     Math.Abs(item.LineTotal - lineTotal) <= 0.02m && Math.Abs(item.Quantity - quantity) <= 0.001m);
+                // İndirim uygulanmış kalem basılı satır tutarından düşük olabilir; adet yine birebir eşleşmeli
+                if (itemIndex < 0)
+                    itemIndex = available.FindIndex(item =>
+                        item.LineTotal > 0 && item.LineTotal <= lineTotal + 0.02m && Math.Abs(item.Quantity - quantity) <= 0.001m);
                 if (itemIndex < 0) return false;
                 available.RemoveAt(itemIndex);
                 break;

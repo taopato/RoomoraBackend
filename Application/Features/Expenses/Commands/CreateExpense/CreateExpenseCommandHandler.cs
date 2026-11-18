@@ -347,7 +347,8 @@ namespace Application.Features.Expenses.Commands.CreateExpense
             if (participants.Count == 0)
                 throw new InvalidOperationException("Aktif ev üyesi bulunamadı.");
 
-            var monthly = Math.Round(total / count, 2, MidpointRounding.AwayFromZero);
+            // Aşağı yuvarlanır ki son taksit hiçbir zaman negatif kalmasın
+            var monthly = Math.Floor(total * 100m / count) / 100m;
 
             var parentPostDate = MonthWithDueDayUtc(startMonthUtc, dueDay);
             var parent = BuildBaseExpense(request, string.IsNullOrWhiteSpace(title) ? "Taksit Planı" : $"{title} (Taksit Planı)", cat, parentPostDate);
@@ -368,8 +369,9 @@ namespace Application.Features.Expenses.Commands.CreateExpense
                 var dueDate = MonthWithDueDayUtc(monthFirst, dueDay);
                 var child = BuildBaseExpense(request, $"{title} taksit {i + 1}/{count}", cat, dueDate);
                 child.ParentExpenseId = parent.Id;
-                child.Tutar = monthly;
-                child.OrtakHarcamaTutari = monthly;
+                // Yuvarlama farkı son taksite eklenir; taksitlerin toplamı ana tutara eşit kalır
+                child.Tutar = i == count - 1 ? total - monthly * (count - 1) : monthly;
+                child.OrtakHarcamaTutari = child.Tutar;
                 child.DueDay = dueDay;
                 child.PlanStartMonth = startMonthUtc;
                 child.InstallmentIndex = i + 1;

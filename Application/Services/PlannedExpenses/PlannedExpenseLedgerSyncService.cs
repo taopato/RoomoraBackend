@@ -1,10 +1,12 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Application.Services.Repositories;
 using Domain.Entities;
+using Microsoft.EntityFrameworkCore;
 
 namespace Application.Services.PlannedExpenses
 {
@@ -24,17 +26,36 @@ namespace Application.Services.PlannedExpenses
             _ledgerLineRepository = ledgerLineRepository;
         }
 
+        // Aynı ev için eş zamanlı senkron çift borç satırı üretmesin
+        private static readonly ConcurrentDictionary<int, SemaphoreSlim> HouseLocks = new();
+
         public async Task EnsureVisibleExpenseLedgersAsync(int houseId, CancellationToken ct = default)
         {
+            var houseLock = HouseLocks.GetOrAdd(houseId, _ => new SemaphoreSlim(1, 1));
+            await houseLock.WaitAsync(ct);
+            try
+            {
+                await SyncHouseAsync(houseId, ct);
+            }
+            finally
+            {
+                houseLock.Release();
+            }
+        }
+
+        private async Task SyncHouseAsync(int houseId, CancellationToken ct)
+        {
             var nowUtc = DateTime.UtcNow;
-            var visiblePlannedExpenses = (await _expenseRepository.GetByHouseIdAsync(houseId))
+            var visiblePlannedExpenses = await _expenseRepository.Query()
+                .Include(expense => expense.Shares)
+                .Include(expense => expense.PersonalExpenses)
                 .Where(expense =>
-                    expense.IsActive &&
+                    expense.HouseId == houseId &&
                     expense.ParentExpenseId != null &&
                     expense.PostDate <= nowUtc &&
                     expense.OrtakHarcamaTutari > 0)
                 .OrderBy(expense => expense.PostDate)
-                .ToList();
+                .ToListAsync(ct);
 
             if (visiblePlannedExpenses.Count == 0)
             {
@@ -100,12 +121,14 @@ namespace Application.Services.PlannedExpenses
             var actual = activeLines
                 .OrderBy(line => line.FromUserId)
                 .ThenBy(line => line.ToUserId)
+                .ThenBy(line => line.Amount - line.PaidAmount)
                 .Select(line => $"{line.FromUserId}:{line.ToUserId}:{Math.Round(line.Amount - line.PaidAmount, 2):0.00}")
                 .ToList();
 
             var expected = expectedLines
                 .OrderBy(line => line.FromUserId)
                 .ThenBy(line => line.ToUserId)
+                .ThenBy(line => line.Amount)
                 .Select(line => $"{line.FromUserId}:{line.ToUserId}:{Math.Round(line.Amount, 2):0.00}")
                 .ToList();
 
@@ -120,7 +143,13 @@ namespace Application.Services.PlannedExpenses
                 return expectedLines;
             }
 
-            var shares = BuildEqualShares(expense.OrtakHarcamaTutari, participants);
+            // Taksitte seçilen katılımcıların kayıtlı payları kullanılır; düzenli giderde mevcut davranış korunur
+            var useStoredSplit = expense.InstallmentIndex != null && expense.Shares.Count > 0;
+            var shares = useStoredSplit
+                ? expense.Shares.Select(share => (share.UserId, Amount: share.PaylasimTutar))
+                    .Concat(expense.PersonalExpenses.Select(personal => (personal.UserId, Amount: personal.Tutar)))
+                    .ToList()
+                : BuildEqualShares(expense.OrtakHarcamaTutari, participants);
             foreach (var share in shares)
             {
                 if (share.UserId == expense.OdeyenUserId || share.Amount <= 0)

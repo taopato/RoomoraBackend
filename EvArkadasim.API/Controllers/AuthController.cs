@@ -9,6 +9,7 @@ using Application.Features.Auths.Dtos;
 using Google.Apis.Auth;
 using MediatR;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.EntityFrameworkCore;
@@ -31,17 +32,22 @@ namespace EvArkadasim.API.Controllers
         private readonly AppDbContext _dbContext;
         private readonly ITokenHelper _tokenHelper;
         private static readonly HttpClient _httpClient = new HttpClient();
+        private static readonly object _codeLimitLock = new();
+        private const int MaxCodeAttempts = 5;
+        private readonly IMemoryCache _cache;
 
         public AuthController(
             IMediator mediator,
             IConfiguration configuration,
             AppDbContext dbContext,
-            ITokenHelper tokenHelper)
+            ITokenHelper tokenHelper,
+            IMemoryCache cache)
         {
             _mediator = mediator;
             _configuration = configuration;
             _dbContext = dbContext;
             _tokenHelper = tokenHelper;
+            _cache = cache;
         }
 
         // A) Sadece kod doğrulama (reset akışı için)
@@ -56,7 +62,10 @@ namespace EvArkadasim.API.Controllers
                 FullName = null!,     // handler’da fullname==null ise bu kod akışına girer
                 Password = string.Empty
             };
+            if (!TryBeginCodeAttempt(cmd.Email))
+                return CodeAttemptsExceeded();
             var res = await _mediator.Send(cmd);
+            ClearCodeAttempts(cmd.Email);
             return Ok(res);
         }
 
@@ -73,7 +82,13 @@ namespace EvArkadasim.API.Controllers
                 Password = dto.Password,
                 InvitationToken = dto.InvitationToken?.Trim()
             };
+            // Deneme sınırı yalnızca doğrulama kodu akışında uygulanır
+            var usesCode = string.IsNullOrEmpty(cmd.InvitationToken);
+            if (usesCode && !TryBeginCodeAttempt(cmd.Email))
+                return CodeAttemptsExceeded();
             var res = await _mediator.Send(cmd);
+            if (usesCode)
+                ClearCodeAttempts(cmd.Email);
             if (res.Id.HasValue && !string.IsNullOrWhiteSpace(res.Token))
             {
                 var refreshToken = CreateRefreshToken(res.Id.Value);
@@ -95,7 +110,12 @@ namespace EvArkadasim.API.Controllers
                 Code = dto.Code?.Trim() ?? string.Empty,
                 NewPassword = dto.NewPassword
             };
+            if (!TryBeginCodeAttempt(cmd.Email))
+                return CodeAttemptsExceeded();
             var res = await _mediator.Send(cmd);
+            ClearCodeAttempts(cmd.Email);
+            // Şifre değişince açık oturumlar kapatılır
+            await RevokeRefreshTokensByEmailAsync(cmd.Email);
             return Ok(res);
         }
 
@@ -103,13 +123,32 @@ namespace EvArkadasim.API.Controllers
         public async Task<IActionResult> SendVerificationCode(
     [FromBody] SendVerificationCodeRequestDto dto)
         {
-            var res = await _mediator.Send(
-                new SendVerificationCodeCommand
-                {
-                    Email = dto.Email?.Trim() ?? string.Empty,
-                    Purpose = dto.Purpose?.Trim().ToLowerInvariant() ?? "register"
-                });
-            return Ok(res);
+            var email = dto.Email?.Trim() ?? string.Empty;
+            var sendKey = $"code-send:{email.ToLowerInvariant()}";
+            lock (_codeLimitLock)
+            {
+                if (_cache.TryGetValue(sendKey, out _))
+                    return StatusCode(StatusCodes.Status429TooManyRequests,
+                        new { message = "Yeni kod istemek için 60 saniye beklemelisin." });
+                _cache.Set(sendKey, true, TimeSpan.FromSeconds(60));
+            }
+
+            try
+            {
+                var res = await _mediator.Send(
+                    new SendVerificationCodeCommand
+                    {
+                        Email = email,
+                        Purpose = dto.Purpose?.Trim().ToLowerInvariant() ?? "register"
+                    });
+                return Ok(res);
+            }
+            catch
+            {
+                // Kod gönderilemediyse kullanıcı beklemeden tekrar deneyebilsin
+                _cache.Remove(sendKey);
+                throw;
+            }
         }
 
         [HttpPost("Login")]
@@ -160,6 +199,8 @@ namespace EvArkadasim.API.Controllers
 
             if (string.IsNullOrWhiteSpace(payload.Email))
                 return Unauthorized("Google e-posta bilgisi alınamadı.");
+            if (payload.EmailVerified != true)
+                return Unauthorized("Google e-posta adresi doğrulanmamış.");
 
             var fullName = payload.Name;
             if (string.IsNullOrWhiteSpace(fullName))
@@ -309,6 +350,32 @@ namespace EvArkadasim.API.Controllers
                 rawToken
             );
         }
+
+        // Deneme sayılır ve kilitlenir; başarıda sayaç sıfırlanır (paralel denemelere karşı önce sayılır)
+        private bool TryBeginCodeAttempt(string email)
+        {
+            var key = $"code-attempt:{email.ToLowerInvariant()}";
+            lock (_codeLimitLock)
+            {
+                var attempts = _cache.TryGetValue(key, out int current) ? current : 0;
+                if (attempts >= MaxCodeAttempts)
+                    return false;
+                _cache.Set(key, attempts + 1, TimeSpan.FromMinutes(15));
+                return true;
+            }
+        }
+
+        private void ClearCodeAttempts(string email) =>
+            _cache.Remove($"code-attempt:{email.ToLowerInvariant()}");
+
+        private IActionResult CodeAttemptsExceeded() =>
+            StatusCode(StatusCodes.Status429TooManyRequests,
+                new { message = "Çok fazla hatalı kod denemesi yapıldı. 15 dakika sonra tekrar dene." });
+
+        private Task<int> RevokeRefreshTokensByEmailAsync(string email) =>
+            _dbContext.RefreshTokens
+                .Where(token => token.User.Email == email && token.RevokedAt == null)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(token => token.RevokedAt, DateTime.UtcNow));
 
         private static string HashToken(string token) =>
             Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(token)));

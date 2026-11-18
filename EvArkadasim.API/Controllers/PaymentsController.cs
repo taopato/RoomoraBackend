@@ -65,7 +65,7 @@ namespace EvArkadasim.API.Controllers
         }
 
         [HttpPost("CreatePayment")]
-        [DisableRequestSizeLimit]
+        [RequestSizeLimit(MaxDekontBytes)]
         public async Task<IActionResult> CreatePayment([FromForm] CreatePaymentForm form)
         {
             var currentUserId = GetCurrentUserId();
@@ -94,11 +94,24 @@ namespace EvArkadasim.API.Controllers
             string dekontUrl = "";
             if (form.Dekont != null)
             {
+                // Uzantı istemciden alınmaz; yalnızca doğrulanmış türler kaydedilir
+                var extension = (form.Dekont.ContentType ?? string.Empty).ToLowerInvariant() switch
+                {
+                    "image/jpeg" or "image/jpg" => ".jpg",
+                    "image/png" => ".png",
+                    "image/webp" => ".webp",
+                    "application/pdf" => ".pdf",
+                    _ => null
+                };
+                if (extension is null || form.Dekont.Length == 0 || form.Dekont.Length > MaxDekontBytes
+                    || !await HasValidDekontSignatureAsync(form.Dekont, extension))
+                    return BadRequest(new { message = "Dekont JPG, PNG, WEBP veya PDF olmalı ve 12 MB'ı geçmemeli." });
+
                 var webRoot = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
                 var uploadsRoot = Path.Combine(webRoot, "uploads", "payments");
                 Directory.CreateDirectory(uploadsRoot);
 
-                var fileName = $"{Guid.NewGuid()}{Path.GetExtension(form.Dekont.FileName)}";
+                var fileName = $"{Guid.NewGuid()}{extension}";
                 var physicalPath = Path.Combine(uploadsRoot, fileName);
                 await using (var fs = System.IO.File.Create(physicalPath))
                     await form.Dekont.CopyToAsync(fs);
@@ -223,6 +236,24 @@ namespace EvArkadasim.API.Controllers
 
             await _mediator.Send(new DeletePaymentCommand(id, currentUserId.Value));
             return Ok(new { success = true, message = "Ödeme silindi." });
+        }
+
+        private const int MaxDekontBytes = 12_000_000;
+
+        private static async Task<bool> HasValidDekontSignatureAsync(IFormFile file, string extension)
+        {
+            var header = new byte[12];
+            await using var stream = file.OpenReadStream();
+            var read = await stream.ReadAsync(header.AsMemory(0, header.Length));
+
+            return extension switch
+            {
+                ".jpg" => read >= 3 && header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF,
+                ".png" => read >= 8 && header.AsSpan(0, 8).SequenceEqual(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }),
+                ".webp" => read >= 12 && header.AsSpan(0, 4).SequenceEqual("RIFF"u8) && header.AsSpan(8, 4).SequenceEqual("WEBP"u8),
+                ".pdf" => read >= 5 && header.AsSpan(0, 5).SequenceEqual("%PDF-"u8),
+                _ => false
+            };
         }
 
         private int? GetCurrentUserId()

@@ -4,6 +4,8 @@ using Application.Services.Accounts;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Persistence.Contexts;
 using System.Security.Claims;
 
 namespace WebAPI.Controllers
@@ -16,17 +18,20 @@ namespace WebAPI.Controllers
         private readonly IUserRepository _userRepository;
         private readonly IWebHostEnvironment _environment;
         private readonly IAccountDeletionService _accountDeletionService;
+        private readonly AppDbContext _dbContext;
 
         public UsersController(
             IMediator mediator,
             IUserRepository userRepository,
             IWebHostEnvironment environment,
-            IAccountDeletionService accountDeletionService)
+            IAccountDeletionService accountDeletionService,
+            AppDbContext dbContext)
         {
             _mediator = mediator;
             _userRepository = userRepository;
             _environment = environment;
             _accountDeletionService = accountDeletionService;
+            _dbContext = dbContext;
         }
 
         /// <summary>
@@ -49,6 +54,11 @@ namespace WebAPI.Controllers
                 request.CurrentPassword,
                 request.NewPassword
             ));
+            // Şifre değiştiyse açık oturumlar kapatılır
+            if (!string.IsNullOrEmpty(request.NewPassword))
+                await _dbContext.RefreshTokens
+                    .Where(token => token.UserId == userId && token.RevokedAt == null)
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(token => token.RevokedAt, DateTime.UtcNow));
             return Ok(result);
         }
 

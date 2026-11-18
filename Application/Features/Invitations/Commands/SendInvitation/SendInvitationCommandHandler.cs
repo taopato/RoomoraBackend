@@ -51,7 +51,8 @@ namespace Application.Features.Invitations.Commands.SendInvitation
 
             var response = new SendInvitationResponseDto
             {
-                InvitationCode = token,
+                // Davet kodu yalnızca davet edilen e-postaya gider; davet edene dönülmez
+                InvitationCode = string.Empty,
                 ExpiresAt = expiresAt
             };
 

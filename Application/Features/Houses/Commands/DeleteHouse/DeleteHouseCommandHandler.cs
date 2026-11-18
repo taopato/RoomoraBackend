@@ -23,15 +23,14 @@ namespace Application.Features.Houses.Commands.DeleteHouse
             if (house.CreatorUserId != request.RequestingUserId)
                 throw new ForbiddenAccessException("Sadece ev kurucusu evi silebilir.");
 
-            // Tüm aktif üyeleri soft-delete ile çıkar
-            var members = await _memberRepo.GetByHouseIdAsync(request.HouseId);
-            foreach (var member in members.Where(m => m.IsActive))
+            // Tüm aktif üyeleri soft-delete ile çıkar (ev ile zaten izlenen üye kayıtları kullanılır)
+            foreach (var member in house.HouseMembers.Where(m => m.IsActive))
             {
                 member.IsActive = false;
                 member.LeftAt = DateTime.UtcNow;
                 member.RemovedByUserId = request.RequestingUserId;
-                await _memberRepo.UpdateAsync(member);
             }
+            await _memberRepo.SaveChangesAsync();
 
             // Fiziksel silme denemesi: bagli veriler nedeniyle silinemiyorsa
             // uye soft-delete uygulandigi icin ev artik kullanicilarda gorunmez.

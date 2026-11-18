@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using Application.Features.Auths.Dtos;
@@ -42,12 +43,15 @@ namespace Application.Features.Auths.Commands.SendVerificationCode
             if (purpose == "reset" && existingUser == null)
                 throw new InvalidOperationException("Bu e-posta ile kayıtlı bir hesap bulunamadı.");
 
-            var code = new Random().Next(100000, 999999).ToString();
+            // Önceki kodlar geçersiz olsun; aynı anda tek kod geçerli
+            await _codeRepo.DeleteByEmailAsync(request.Email);
+            var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
 
             var entity = new VerificationCode
             {
                 Email = request.Email,
                 Code = code,
+                CreatedAt = DateTime.UtcNow,
                 ExpiresAt = DateTime.UtcNow.AddMinutes(10)
             };
             await _codeRepo.AddAsync(entity);

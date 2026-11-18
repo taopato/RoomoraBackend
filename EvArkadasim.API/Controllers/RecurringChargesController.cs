@@ -312,6 +312,21 @@ public class RecurringChargesController : ControllerBase
                 }).ToList(),
             };
             _db.ChargeCycles.Add(cycle);
+            try
+            {
+                await _db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException)
+            {
+                // Aynı dönemi eş zamanlı başka bir istek oluşturdu; başarısız kayıt bırakılıp onunki kullanılır
+                foreach (var share in cycle.Shares)
+                    _db.Entry(share).State = EntityState.Detached;
+                _db.Entry(cycle).State = EntityState.Detached;
+                plan.Cycles.Remove(cycle);
+                cycle = await _db.ChargeCycles
+                    .Include(x => x.Shares)
+                    .FirstAsync(x => x.ContractId == plan.Id && x.Period == period, ct);
+            }
         }
 
         cycle.Contract = plan;

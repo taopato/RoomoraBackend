@@ -390,7 +390,7 @@ namespace EvArkadasim.API.Controllers
             var itemTotal = receipt.Items.Sum(x => x.LineTotal);
             if (receipt.DetectedTotalAmount is not > 0
                 || Math.Abs(receipt.DetectedTotalAmount.Value - itemTotal) > 0.02m
-                || receipt.Items.Any(x => IsAggregateReceiptItem(x.Name)))
+                || receipt.Items.Any(x => ReceiptOcrParts.IsAggregateItem(x.Name)))
                 return BadRequest(new { message = "Fiş toplamı ve kalemler doğrulanmadan harcamaya dönüştürülemez." });
             if (!ReceiptQuantityValidation.Matches(receipt.RawOcrText, receipt.Items.Select(x => (x.Quantity, x.LineTotal))))
                 return BadRequest(new { message = "Fişteki adet satırları kalem miktarlarıyla uyuşmuyor." });
@@ -458,6 +458,12 @@ namespace EvArkadasim.API.Controllers
             };
 
             await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+            // Fişi atomik olarak sahiplen; çift dokunuşta ikinci istek harcama oluşturamaz (hata olursa işlem geri alınır)
+            var claimed = await _dbContext.Receipts
+                .Where(x => x.Id == receiptId && x.ConvertedExpenseId == null && x.Status != ReceiptStatus.Converted)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Status, ReceiptStatus.Converted), cancellationToken);
+            if (claimed == 0)
+                return Conflict(new { message = "Bu fiş daha önce harcamaya dönüştürüldü." });
             var createdExpense = await _mediator.Send(command, cancellationToken);
 
             receipt.Status = ReceiptStatus.Converted;
@@ -523,7 +529,7 @@ namespace EvArkadasim.API.Controllers
                 return BadRequest(new { message = "En az bir geçerli fiş kalemi bulunmalıdır." });
             if (request.DetectedTotalAmount is not > 0
                 || Math.Abs(request.DetectedTotalAmount.Value - normalizedItems.Sum(x => x.LineTotal)) > 0.02m
-                || normalizedItems.Any(x => IsAggregateReceiptItem(x.Name)))
+                || normalizedItems.Any(x => ReceiptOcrParts.IsAggregateItem(x.Name)))
                 return BadRequest(new { message = "Fiş toplamı ve kalemler doğrulanmalıdır." });
             if (!ReceiptQuantityValidation.Matches(receipt.RawOcrText, normalizedItems.Select(x => (x.Quantity, x.LineTotal))))
                 return BadRequest(new { message = "Fişteki adet satırları kalem miktarlarıyla uyuşmuyor." });
@@ -728,14 +734,6 @@ namespace EvArkadasim.API.Controllers
             {
                 return new List<int>();
             }
-        }
-
-        private static bool IsAggregateReceiptItem(string? name)
-        {
-            var value = name?.Trim() ?? string.Empty;
-            return value.StartsWith("Fis Toplami", StringComparison.OrdinalIgnoreCase)
-                || value.StartsWith("Fiş Toplamı", StringComparison.OrdinalIgnoreCase)
-                || value.StartsWith("Ortak Kalan Tutar", StringComparison.OrdinalIgnoreCase);
         }
 
         private static List<(int UserId, decimal Amount)> SplitAmount(decimal total, List<int> participantIds)

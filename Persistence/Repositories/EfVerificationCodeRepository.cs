@@ -30,5 +30,11 @@ namespace Persistence.Repositories
             _context.VerificationCodes.Remove(entity);
             await _context.SaveChangesAsync();
         }
+
+        public async Task DeleteByEmailAsync(string email)
+        {
+            _context.VerificationCodes.RemoveRange(_context.VerificationCodes.Where(x => x.Email == email));
+            await _context.SaveChangesAsync();
+        }
     }
 }

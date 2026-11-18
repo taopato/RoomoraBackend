@@ -28,7 +28,7 @@ namespace EvArkadasim.API.Services.Receipts
         public static ReceiptOcrResult Merge(ReceiptOcrResult upper, ReceiptOcrResult lower)
         {
             var items = upper.Items.Concat(lower.Items)
-                .Where(item => !string.Equals(item.Name, "Fiş Toplamı", StringComparison.OrdinalIgnoreCase))
+                .Where(item => !IsAggregateItem(item.Name))
                 .ToList();
             return new ReceiptOcrResult
             {
@@ -41,6 +41,15 @@ namespace EvArkadasim.API.Services.Receipts
                 TotalAmount = lower.TotalAmount ?? (items.Count > 0 ? items.Sum(item => item.LineTotal) : null),
                 Items = items,
             };
+        }
+
+        // OCR servisi "Fis Toplami", .NET yedeği "Fiş Toplamı" üretir; ikisi de ürün değildir
+        public static bool IsAggregateItem(string? name)
+        {
+            var value = name?.Trim() ?? string.Empty;
+            return value.StartsWith("Fis Toplami", StringComparison.OrdinalIgnoreCase)
+                || value.StartsWith("Fiş Toplamı", StringComparison.OrdinalIgnoreCase)
+                || value.StartsWith("Ortak Kalan Tutar", StringComparison.OrdinalIgnoreCase);
         }
     }
 }
