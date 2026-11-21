@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Domain.Enums;
 
 namespace Application.Features.Expenses.Dtos
@@ -26,5 +27,13 @@ namespace Application.Features.Expenses.Dtos
         public short? PreShareDays { get; set; }
         public VisibilityMode VisibilityMode { get; set; }
         public ExpenseCategory Category { get; set; }
+        // Harcamadaki kişi payları (ortak pay + kişisel kalem); "kimin için" filtresi için
+        public List<ExpenseParticipantDto> Participants { get; set; } = new();
+    }
+
+    public class ExpenseParticipantDto
+    {
+        public int UserId { get; set; }
+        public decimal Amount { get; set; }
     }
 }

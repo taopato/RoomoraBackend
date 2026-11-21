@@ -41,6 +41,13 @@ namespace Application.Features.Expenses.Queries.GetExpensesByHouse
                 dto.PreShareDays = e.PreShareDays;
                 dto.VisibilityMode = e.VisibilityMode;
                 dto.Category = e.Category;
+                dto.Participants = e.Shares
+                    .Select(share => (share.UserId, Amount: share.PaylasimTutar))
+                    .Concat(e.PersonalExpenses.Select(personal => (personal.UserId, Amount: personal.Tutar)))
+                    .GroupBy(part => part.UserId)
+                    .Select(group => new ExpenseParticipantDto { UserId = group.Key, Amount = group.Sum(part => part.Amount) })
+                    .Where(part => part.Amount > 0)
+                    .ToList();
 
                 // 🔹 Notu description'a yansıt
                 if (string.IsNullOrWhiteSpace(dto.Description))

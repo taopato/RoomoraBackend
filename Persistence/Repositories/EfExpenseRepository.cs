@@ -54,6 +54,9 @@ namespace Persistence.Repositories
         {
             return await _context.Expenses
                                  .Where(e => e.HouseId == houseId && e.IsActive)
+                                 .Include(e => e.Shares)
+                                 .Include(e => e.PersonalExpenses)
+                                 .AsSplitQuery()
                                  .ToListAsync();
         }
 

@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Domain.Entities;
+using EvArkadasim.API.Services.Notifications;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -24,7 +25,13 @@ public sealed class RegisterPushDeviceRequest
 public class PushDevicesController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public PushDevicesController(AppDbContext db) => _db = db;
+    private readonly IPushNotificationService _push;
+
+    public PushDevicesController(AppDbContext db, IPushNotificationService push)
+    {
+        _db = db;
+        _push = push;
+    }
 
     [HttpPost]
     public async Task<IActionResult> Register(RegisterPushDeviceRequest request, CancellationToken ct)
@@ -52,6 +59,16 @@ public class PushDevicesController : ControllerBase
         device.LastSeenAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         return Ok(new { device.Id });
+    }
+
+    // Ayarlar > Bildirimler > "Telefon bildirimini dene": yalnız giriş yapan kullanıcının cihazlarına gider
+    [HttpPost("test")]
+    public async Task<IActionResult> Test(CancellationToken ct)
+    {
+        var userId = CurrentUserId();
+        if (userId is null) return Unauthorized();
+        var devices = await _push.SendTestAsync(userId.Value, ct);
+        return Ok(new { devices });
     }
 
     [HttpDelete]
